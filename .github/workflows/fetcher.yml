@@ -1,0 +1,27 @@
+name: Run Trade With Nilay fetcher
+
+on:
+  schedule:
+    # GitHub Actions minimum schedule granularity is effectively 5 minutes; use a cloud VM or container for 1-minute cadence.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Run one fetch cycle
+        env:
+          TELEGRAM_BOT_API: ${{ secrets.TELEGRAM_BOT_API }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -c "from backend.scripts.run_fetcher import run_once; run_once()"

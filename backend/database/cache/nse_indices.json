@@ -1,0 +1,54 @@
+[
+  {
+    "name": "NIFTY 50",
+    "symbol": "NIFTY"
+  },
+  {
+    "name": "NIFTY BANK",
+    "symbol": "BANKNIFTY"
+  },
+  {
+    "name": "NIFTY IT",
+    "symbol": "NIFTYIT"
+  },
+  {
+    "name": "NIFTY AUTO",
+    "symbol": "NIFTYAUTO"
+  },
+  {
+    "name": "NIFTY PHARMA",
+    "symbol": "NIFTYPHARMA"
+  },
+  {
+    "name": "NIFTY FMCG",
+    "symbol": "NIFTYFMCG"
+  },
+  {
+    "name": "NIFTY METAL",
+    "symbol": "NIFTYMETAL"
+  },
+  {
+    "name": "NIFTY REALTY",
+    "symbol": "NIFTYREALTY"
+  },
+  {
+    "name": "NIFTY ENERGY",
+    "symbol": "NIFTYENERGY"
+  },
+  {
+    "name": "NIFTY MEDIA",
+    "symbol": "NIFTYMEDIA"
+  },
+  {
+    "name": "NIFTY MIDCAP 50",
+    "symbol": "NIFTYMIDCAP50"
+  },
+  {
+    "name": "NIFTY SMALLCAP 50",
+    "symbol": "NIFTYSMALLCAP50"
+  },
+  {
+    "name": "INDIA VIX",
+    "symbol": "INDIAVIX"
+  }
+]

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NSE Scanner Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>📊 NSE Scanner Dashboard</h1>
+            <div class="header-info">
+                <span>Last Update: <strong id="last-update">{{ last_update }}</strong></span>
+                <button class="btn-refresh" onclick="refreshData()">🔄 Refresh</button>
+            </div>
+        </header>
+
+        <!-- Statistics -->
+        <section class="stats-section">
+            <div class="stat-card">
+                <div class="stat-label">Total Signals</div>
+                <div class="stat-value">{{ total_signals }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">High Score (≥7)</div>
+                <div class="stat-value high-value">{{ high_score_count }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Average Score</div>
+                <div class="stat-value">{{ average_score }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">OB Tapped</div>
+                <div class="stat-value">{{ signal_counts.ob_tapped_count|default(0) }}</div>
+            </div>
+        </section>
+
+        <!-- Error Display -->
+        {% if error %}
+        <div class="error-box">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+
+        <!-- Signals Table -->
+        <section class="section">
+            <h2>📈 Today's Signals</h2>
+            <div class="table-wrapper">
+                <table class="signals-table">
+                    <thead>
+                        <tr>
+                            <th class="rank">Rank</th>
+                            <th class="symbol">Symbol</th>
+                            <th class="score">Score</th>
+                            <th class="signal">OB</th>
+                            <th class="signal">Swing</th>
+                            <th class="signal">Doji</th>
+                            <th class="signal">Cons</th>
+                            <th class="signal">Vol</th>
+                            <th class="price">Price</th>
+                            <th class="change">Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if signals_table %}
+                            {% for signal in signals_table %}
+                            <tr class="signal-row">
+                                <td class="rank">{{ signal.rank }}</td>
+                                <td class="symbol">{{ signal.symbol }}</td>
+                                <td class="score {{ signal.score|score_class }}">{{ signal.score }}</td>
+                                <td class="signal {{ signal.ob_tap|signal_color }}">{{ signal.ob_tap }}</td>
+                                <td class="signal {{ signal.swing|signal_color }}">{{ signal.swing }}</td>
+                                <td class="signal {{ signal.doji|signal_color }}">{{ signal.doji }}</td>
+                                <td class="signal {{ signal.consolidation|signal_color }}">{{ signal.consolidation }}</td>
+                                <td class="signal {{ signal.volume_spike|signal_color }}">{{ signal.volume_spike }}</td>
+                                <td class="price">{{ signal.price }}</td>
+                                <td class="change" data-change="{{ signal.change }}">{{ signal.change }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr class="empty-row">
+                            <td colspan="10" class="text-center">No signals found. Run scanner to populate data.</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Order Block Zones -->
+        <section class="section">
+            <h2>🎯 Order Block Zones</h2>
+            <div class="table-wrapper">
+                <table class="ob-table">
+                    <thead>
+                        <tr>
+                            <th class="symbol">Symbol</th>
+                            <th class="zone">Zone Low</th>
+                            <th class="zone">Zone High</th>
+                            <th class="status">Status</th>
+                            <th class="strength">Strength</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if ob_table %}
+                            {% for ob in ob_table %}
+                            <tr class="ob-row">
+                                <td class="symbol">{{ ob.symbol }}</td>
+                                <td class="zone">{{ ob.zone_low }}</td>
+                                <td class="zone">{{ ob.zone_high }}</td>
+                                <td class="status {{ 'ob-tapped' if '✓' in ob.tapped else 'ob-not-tapped' }}">{{ ob.tapped }}</td>
+                                <td class="strength {{ 'strength-strong' if ob.strength == 'Strong' else 'strength-moderate' if ob.strength == 'Moderate' else 'strength-weak' }}">{{ ob.strength }}</td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                        <tr class="empty-row">
+                            <td colspan="5" class="text-center">No OB zones available.</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Signal Breakdown -->
+        <section class="section">
+            <h2>📊 Signal Breakdown</h2>
+            <div class="breakdown-grid">
+                <div class="breakdown-card">
+                    <div class="breakdown-label">Order Block Taps</div>
+                    <div class="breakdown-count">{{ signal_counts.ob_tapped_count|default(0) }}</div>
+                </div>
+                <div class="breakdown-card">
+                    <div class="breakdown-label">Swing Conditions</div>
+                    <div class="breakdown-count">{{ signal_counts.swing_valid_count|default(0) }}</div>
+                </div>
+                <div class="breakdown-card">
+                    <div class="breakdown-label">Doji Patterns</div>
+                    <div class="breakdown-count">{{ signal_counts.doji_count|default(0) }}</div>
+                </div>
+                <div class="breakdown-card">
+                    <div class="breakdown-label">Consolidations</div>
+                    <div class="breakdown-count">{{ signal_counts.consolidation_count|default(0) }}</div>
+                </div>
+                <div class="breakdown-card">
+                    <div class="breakdown-label">Volume Spikes</div>
+                    <div class="breakdown-count">{{ signal_counts.volume_spike_count|default(0) }}</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Legend -->
+        <section class="section legend">
+            <h3>📖 Legend</h3>
+            <div class="legend-grid">
+                <div class="legend-item">
+                    <span class="score-excellent">■</span>
+                    <span>Excellent (≥10)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="score-good">■</span>
+                    <span>Good (7-9)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="score-moderate">■</span>
+                    <span>Moderate (4-6)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="score-low">■</span>
+                    <span>Low (0-3)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="signal-active">✓</span>
+                    <span>Signal Present</span>
+                </div>
+                <div class="legend-item">
+                    <span class="signal-inactive">✗</span>
+                    <span>Signal Absent</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>NSE Scanner Dashboard | Last Updated: <span id="footer-time">{{ last_update }}</span></p>
+            <p><small>Refresh page or click Refresh button to update data</small></p>
+        </footer>
+    </div>
+
+    <script>
+        function refreshData() {
+            fetch('/refresh', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        console.log('Data refreshed');
+                        // Reload page after short delay
+                        setTimeout(() => location.reload(), 500);
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            fetch('/api/stats')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        document.getElementById('last-update').textContent = data.last_update;
+                        document.getElementById('footer-time').textContent = data.last_update;
+                    }
+                })
+                .catch(error => console.error('Error:', error));
+        }, 30000);
+    </script>
+</body>
+</html>

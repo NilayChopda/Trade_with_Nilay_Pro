@@ -1,0 +1,2 @@
+symbol,name,price,change,volume,passes_scanner,passes_filter,wma_daily_1,wma_monthly_2
+JSWSTEEL,JSWSTEEL,2480.24,-0.18,557387,True,True,2480.24,2462.24

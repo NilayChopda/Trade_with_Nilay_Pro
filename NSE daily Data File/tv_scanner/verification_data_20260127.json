@@ -1,0 +1,370 @@
+{
+  "scan_date": "2026-01-27",
+  "total_signals": 52,
+  "signals": [
+    {
+      "symbol": "MARATHON",
+      "name": "MARATHON",
+      "price": 4884.57,
+      "change": 1.01,
+      "volume": 521801
+    },
+    {
+      "symbol": "SKIL",
+      "name": "SKIL",
+      "price": 4841.6,
+      "change": 0.32,
+      "volume": 319119
+    },
+    {
+      "symbol": "SAMMAANCAP",
+      "name": "SAMMAANCAP",
+      "price": 4813.02,
+      "change": 1.03,
+      "volume": 453461
+    },
+    {
+      "symbol": "THERMAX",
+      "name": "THERMAX",
+      "price": 4729.76,
+      "change": 1.94,
+      "volume": 754288
+    },
+    {
+      "symbol": "MENONBE",
+      "name": "MENONBE",
+      "price": 4666.05,
+      "change": 0.59,
+      "volume": 545811
+    },
+    {
+      "symbol": "ALUWIND",
+      "name": "ALUWIND",
+      "price": 4646.97,
+      "change": 1.0,
+      "volume": 766263
+    },
+    {
+      "symbol": "STUDIOLSD",
+      "name": "STUDIOLSD",
+      "price": 4464.72,
+      "change": -0.92,
+      "volume": 683763
+    },
+    {
+      "symbol": "FLAIR",
+      "name": "FLAIR",
+      "price": 4456.25,
+      "change": 1.03,
+      "volume": 810781
+    },
+    {
+      "symbol": "ATGL",
+      "name": "ATGL",
+      "price": 4403.86,
+      "change": 1.77,
+      "volume": 364077
+    },
+    {
+      "symbol": "VERANDA",
+      "name": "VERANDA",
+      "price": 4273.46,
+      "change": 1.33,
+      "volume": 561188
+    },
+    {
+      "symbol": "ASCOM",
+      "name": "ASCOM",
+      "price": 4200.35,
+      "change": -0.92,
+      "volume": 281581
+    },
+    {
+      "symbol": "KCK",
+      "name": "KCK",
+      "price": 4157.99,
+      "change": 1.61,
+      "volume": 946019
+    },
+    {
+      "symbol": "JUBLPHARMA",
+      "name": "JUBLPHARMA",
+      "price": 4147.57,
+      "change": 1.43,
+      "volume": 840759
+    },
+    {
+      "symbol": "CHEMBOND",
+      "name": "CHEMBOND",
+      "price": 4056.1,
+      "change": 1.96,
+      "volume": 279262
+    },
+    {
+      "symbol": "GVPTECHPP.E1",
+      "name": "GVPTECHPP.E1",
+      "price": 3956.74,
+      "change": 0.16,
+      "volume": 16542
+    },
+    {
+      "symbol": "BHARATRAS",
+      "name": "BHARATRAS",
+      "price": 3903.89,
+      "change": 1.4,
+      "volume": 80193
+    },
+    {
+      "symbol": "USHAMART",
+      "name": "USHAMART",
+      "price": 3869.46,
+      "change": 1.36,
+      "volume": 681284
+    },
+    {
+      "symbol": "SHALPAINTS",
+      "name": "SHALPAINTS",
+      "price": 3810.47,
+      "change": 1.16,
+      "volume": 221953
+    },
+    {
+      "symbol": "AARTIIND",
+      "name": "AARTIIND",
+      "price": 3614.79,
+      "change": 1.53,
+      "volume": 440137
+    },
+    {
+      "symbol": "GULFPETRO",
+      "name": "GULFPETRO",
+      "price": 3558.68,
+      "change": 0.72,
+      "volume": 270531
+    },
+    {
+      "symbol": "WELINV",
+      "name": "WELINV",
+      "price": 3381.06,
+      "change": -0.37,
+      "volume": 896457
+    },
+    {
+      "symbol": "SUNCLAY",
+      "name": "SUNCLAY",
+      "price": 3172.1,
+      "change": 0.52,
+      "volume": 566095
+    },
+    {
+      "symbol": "RISHABH",
+      "name": "RISHABH",
+      "price": 3102.78,
+      "change": 1.37,
+      "volume": 905265
+    },
+    {
+      "symbol": "TIJARIA",
+      "name": "TIJARIA",
+      "price": 3021.31,
+      "change": 1.49,
+      "volume": 391350
+    },
+    {
+      "symbol": "FINCABLES",
+      "name": "FINCABLES",
+      "price": 2946.64,
+      "change": -0.91,
+      "volume": 584736
+    },
+    {
+      "symbol": "SOMANYCERA",
+      "name": "SOMANYCERA",
+      "price": 2942.96,
+      "change": 0.55,
+      "volume": 652275
+    },
+    {
+      "symbol": "TMCV",
+      "name": "TMCV",
+      "price": 2788.81,
+      "change": -0.34,
+      "volume": 334420
+    },
+    {
+      "symbol": "CENTEXT",
+      "name": "CENTEXT",
+      "price": 2676.98,
+      "change": -0.38,
+      "volume": 230865
+    },
+    {
+      "symbol": "WENDT",
+      "name": "WENDT",
+      "price": 2558.07,
+      "change": 1.77,
+      "volume": 307993
+    },
+    {
+      "symbol": "CAPACITE",
+      "name": "CAPACITE",
+      "price": 2523.81,
+      "change": 1.32,
+      "volume": 996927
+    },
+    {
+      "symbol": "CAPTRUST",
+      "name": "CAPTRUST",
+      "price": 2163.95,
+      "change": 1.38,
+      "volume": 659112
+    },
+    {
+      "symbol": "VARROC",
+      "name": "VARROC",
+      "price": 2116.34,
+      "change": 0.23,
+      "volume": 362872
+    },
+    {
+      "symbol": "VSTIND",
+      "name": "VSTIND",
+      "price": 2074.82,
+      "change": 1.0,
+      "volume": 139938
+    },
+    {
+      "symbol": "BPCL",
+      "name": "BPCL",
+      "price": 2017.3,
+      "change": -0.05,
+      "volume": 987633
+    },
+    {
+      "symbol": "INDORAMA",
+      "name": "INDORAMA",
+      "price": 1998.32,
+      "change": 0.27,
+      "volume": 798555
+    },
+    {
+      "symbol": "GAIL",
+      "name": "GAIL",
+      "price": 1996.82,
+      "change": 0.47,
+      "volume": 397918
+    },
+    {
+      "symbol": "PRLIND",
+      "name": "PRLIND",
+      "price": 1944.05,
+      "change": 0.18,
+      "volume": 664106
+    },
+    {
+      "symbol": "HDBFS",
+      "name": "HDBFS",
+      "price": 1928.01,
+      "change": 0.01,
+      "volume": 530834
+    },
+    {
+      "symbol": "LUMAXTECH",
+      "name": "LUMAXTECH",
+      "price": 1861.95,
+      "change": -0.85,
+      "volume": 583522
+    },
+    {
+      "symbol": "SENORES",
+      "name": "SENORES",
+      "price": 1649.26,
+      "change": 0.11,
+      "volume": 202735
+    },
+    {
+      "symbol": "DIGISPICE",
+      "name": "DIGISPICE",
+      "price": 1451.63,
+      "change": -0.62,
+      "volume": 281506
+    },
+    {
+      "symbol": "GTL",
+      "name": "GTL",
+      "price": 1405.09,
+      "change": 1.46,
+      "volume": 321558
+    },
+    {
+      "symbol": "BHARTIARTL",
+      "name": "BHARTIARTL",
+      "price": 1307.37,
+      "change": 1.87,
+      "volume": 44442
+    },
+    {
+      "symbol": "HERITGFOOD",
+      "name": "HERITGFOOD",
+      "price": 1173.66,
+      "change": 0.86,
+      "volume": 463114
+    },
+    {
+      "symbol": "M&MFIN",
+      "name": "M&MFIN",
+      "price": 1163.17,
+      "change": -0.01,
+      "volume": 762745
+    },
+    {
+      "symbol": "VISAKAIND",
+      "name": "VISAKAIND",
+      "price": 1125.42,
+      "change": 1.37,
+      "volume": 635883
+    },
+    {
+      "symbol": "DYNPRO",
+      "name": "DYNPRO",
+      "price": 822.44,
+      "change": 1.59,
+      "volume": 921948
+    },
+    {
+      "symbol": "JUBLCPL",
+      "name": "JUBLCPL",
+      "price": 754.05,
+      "change": 0.24,
+      "volume": 638061
+    },
+    {
+      "symbol": "TAJGVK",
+      "name": "TAJGVK",
+      "price": 753.4,
+      "change": -0.63,
+      "volume": 83795
+    },
+    {
+      "symbol": "CMRSL",
+      "name": "CMRSL",
+      "price": 666.94,
+      "change": -0.92,
+      "volume": 159680
+    },
+    {
+      "symbol": "SKMEGGPROD",
+      "name": "SKMEGGPROD",
+      "price": 317.79,
+      "change": 0.77,
+      "volume": 38987
+    },
+    {
+      "symbol": "BERGEPAINT",
+      "name": "BERGEPAINT",
+      "price": 233.81,
+      "change": 1.59,
+      "volume": 133306
+    }
+  ]
+}

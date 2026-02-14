@@ -1,0 +1,40 @@
+# Core dependencies
+python-dotenv>=0.21.0
+requests>=2.28.0
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Data sources
+yfinance>=0.2.0
+nsepy>=0.8
+nsetools>=1.0.11
+
+# Scheduling & async
+schedule>=1.1.0
+asyncio>=3.4.3
+
+# Notifications
+python-telegram-bot>=20.0
+
+# Web scraping (for Chartink)
+selenium>=4.0.0
+beautifulsoup4>=4.11.0
+lxml>=4.9.0
+
+# Dashboard
+streamlit>=1.30.0
+plotly>=5.18.0
+watchdog>=3.0.0
+sqlalchemy>=2.0.0
+
+# API server
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Monitoring & logging
+loguru>=0.7.0

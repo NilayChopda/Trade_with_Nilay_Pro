@@ -1,0 +1,52 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>NSE Scanner Dashboard</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f0f2f5; }
+        .header { background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+        .stats { display: flex; gap: 15px; margin: 20px 0; }
+        .stat { background: white; padding: 15px; border-radius: 8px; flex: 1; text-align: center; }
+        .btn { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 5px; margin: 5px; }
+        table { width: 100%; background: white; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 10px; border-bottom: 1px solid #ddd; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>NSE Scanner Dashboard</h1>
+        <button class="btn" onclick="loadData()">Refresh</button>
+    </div>
+    
+    <div class="stats">
+        <div class="stat">Last Scan: <span id="last">Never</span></div>
+        <div class="stat">Stocks Found: <span id="found">0</span></div>
+    </div>
+    
+    <div id="results">Loading...</div>
+    
+    <script>
+    async function loadData() {
+        const res = await fetch('/api/data');
+        const data = await res.json();
+        
+        document.getElementById('last').textContent = data.last_scan || 'Never';
+        document.getElementById('found').textContent = data.stocks_found || 0;
+        
+        if(data.stocks && data.stocks.length > 0) {
+            let html = '<table><tr><th>Stock</th><th>Price</th><th>Change%</th></tr>';
+            data.stocks.forEach(s => {
+                html += `<tr><td>${s.symbol}</td><td>${s.price}</td><td>${s.change}</td></tr>`;
+            });
+            html += '</table>';
+            document.getElementById('results').innerHTML = html;
+        } else {
+            document.getElementById('results').innerHTML = 'No stocks found';
+        }
+    }
+    
+    // Load on page load
+    loadData();
+    </script>
+</body>
+</html>

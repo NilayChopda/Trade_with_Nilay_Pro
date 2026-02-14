@@ -1,0 +1,4 @@
+symbol,name,price,change,volume,passes_scanner,passes_filter,wma_daily_1,wma_monthly_2
+AIRTELPP.E1,AIRTELPP.E1,3967.61,0.55,638035,True,True,3967.61,3907.64
+JSWSTEEL,JSWSTEEL,2609.59,1.49,422934,True,True,2609.59,2522.62
+GRASIM,GRASIM,4396.43,0.32,683182,True,True,4396.43,4220.66

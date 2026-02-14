@@ -1,0 +1,40 @@
+name: Market Data Collection
+
+on:
+  schedule:
+    # Run every 5 minutes during Indian Market Hours (9:15 AM - 3:30 PM IST)
+    # Mon-Fri
+    - cron: '*/5 3-10 * * 1-5'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  collect-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run Market Data Collection
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m backend.scheduler --once
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add database/trade_with_nilay.db
+          git add backend/logs/*.log
+          git commit -m "Auto-update market data: $(date)" || echo "No changes to commit"
+          git push

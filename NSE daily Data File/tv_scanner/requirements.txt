@@ -1,0 +1,11 @@
+git+https://github.com/rongardF/tvdatafeed.git
+pandas
+pandas-ta
+tenacity
+telebot
+streamlit
+playwright
+schedule
+requests
+retrying
+openpyxl
