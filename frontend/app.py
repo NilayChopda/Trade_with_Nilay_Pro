@@ -52,6 +52,27 @@ st.markdown("""
 <meta name="apple-mobile-web-app-title" content="Trade With Nilay">
 """, unsafe_allow_html=True)
 
+# Mobile-Optimized CSS
+st.markdown("""
+    <style>
+        /* Hide Streamlit Branding */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        
+        /* Mobile Padding Optimization */
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 5rem;
+        }
+        
+        /* Better Table Scrolling on Mobile */
+        .stDataFrame {
+            overflow-x: auto;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # Auto-refresh every 5 minutes with countdown
 refresh_interval = 5 * 60  # 300 seconds
 if "last_refresh" not in st.session_state:
