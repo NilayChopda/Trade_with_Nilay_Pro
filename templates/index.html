@@ -203,6 +203,38 @@
     </div>
 </div>
 
+<!-- SMC Scanner Tab -->
+<div id="smc-tab" class="tab-content d-none">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between">
+            <h2 class="fw-bold">Smart Money Concepts (SMC)</h2>
+            <button class="btn btn-primary" onclick="loadScanner('smc')">Run SMC Scan</button>
+        </div>
+    </div>
+    <div class="card bg-black border-secondary">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-4">SYMBOL</th>
+                        <th>PRICE</th>
+                        <th>%CHANGE</th>
+                        <th>DEMAND ZONE / OB</th>
+                        <th>REASONING</th>
+                        <th class="text-end pe-4">ACTION</th>
+                    </tr>
+                </thead>
+                <tbody id="smc-scanner-body">
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-secondary">Scanning for Institutional Order
+                            Blocks...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 <!-- Announcements Tab -->
 <div id="announcements-tab" class="tab-content d-none">
     <div class="row mb-4">
@@ -228,6 +260,40 @@
     <h2 class="fw-bold mb-4">Market End-of-Day History</h2>
     <div id="eod-container">
         <!-- History Cards Load Here -->
+    </div>
+</div>
+
+<!-- Chartink Live Tab -->
+<div id="chartink-tab" class="tab-content d-none">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between">
+            <div>
+                <h2 class="fw-bold mb-1">Chartink Live Replica</h2>
+                <p class="text-secondary small">Live results from your proprietary Chartink scanners</p>
+            </div>
+            <button class="btn btn-outline-info" onclick="loadScanner('chartink')">Fetch Chartink Live</button>
+        </div>
+    </div>
+    <div class="card bg-black border-secondary">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-4">SYMBOL</th>
+                        <th>PRICE</th>
+                        <th>%CHANGE</th>
+                        <th>SCANNER SOURCE</th>
+                        <th class="text-end pe-4">ACTION</th>
+                    </tr>
+                </thead>
+                <tbody id="chartink-scanner-body">
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-secondary">Connect to Chartink to fetch live
+                            results.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 

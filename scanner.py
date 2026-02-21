@@ -5,10 +5,16 @@ import time
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from data_provider import DataProvider
 from indicators import get_technical_summary, calculate_wma, calculate_rsi
 from database import get_db, save_dashboard_cache, log_alert, is_already_alerted
 from telegram_bot import send_telegram_alert
+
+# Institutional Logic Imports
+from backend.strategy.smc import SMCEngine
+from backend.strategy.pattern_detector import PatternDetector
+from backend.scanner.chartink_scanner import ChartinkScanner
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +22,20 @@ class MarketScanner:
     def __init__(self):
         self.data_provider = DataProvider()
         self.symbols_equity = self._load_symbols()
-        # F&O filtered subset
-        self.symbols_fno = self.symbols_equity[:50] 
+        # F&O filtered subset (Top 100 most liquid)
+        self.symbols_fno = self.symbols_equity[:100] if len(self.symbols_equity) > 100 else self.symbols_equity
+        
+        # Institutional Engines
+        self.smc_engine = SMCEngine()
+        self.pattern_detector = PatternDetector()
+        self.is_scanning = False
+        
+        # Chartink Scanners
+        self.chartink_scanners = [
+            ChartinkScanner("https://chartink.com/screener/nilay-swing-pick-algo", "Swing Pick Algo"),
+            ChartinkScanner("https://chartink.com/screener/nilay-swing-pick-2-0", "Swing Pick 2.0"),
+            ChartinkScanner("https://chartink.com/screener/nilay-fno-autopick-scanner", "FnO Autopick")
+        ]
 
     def _load_symbols(self):
         """Loads symbols from local data/symbols.json."""
@@ -85,119 +103,134 @@ class MarketScanner:
     def check_vcp_criteria(self, symbol):
         """Logic for Special VCP / Breakout Watch Scanner."""
         try:
-            df = self.data_provider.get_historical_data(symbol, period="6mo")
-            if len(df) < 50: return None
+            df = self.data_provider.get_historical_data(symbol, period="1y")
+            if len(df) < 150: return None
             
-            # Indicators
-            close = df['Close'].iloc[-1]
-            ema50 = df['Close'].ewm(span=50).mean().iloc[-1]
-            ema200 = df['Close'].ewm(span=200).mean().iloc[-1]
-            rsi = calculate_rsi(df).iloc[-1]
-            high1m = df['High'].iloc[-22:].max()
+            # Use PatternDetector for robust VCP detection
+            df.columns = [c.lower() for c in df.columns]
+            analysis = self.pattern_detector.analyze(df, symbol)
             
-            # --- 1. TREND FILTER ---
-            trend_ok = close > ema50 and ema50 > ema200 and close > (high1m * 0.90) and rsi > 55
-            if not trend_ok: return None
+            is_vcp = any(p['type'] == 'VCP' for p in analysis['patterns'])
+            is_breakout = any(p['type'] == 'BREAKOUT' for p in analysis['patterns'])
             
-            # --- 2. CONSOLIDATION (Tightness) ---
-            range15 = df['High'].iloc[-15:].max() - df['Low'].iloc[-15:].min()
-            tight_range = range15 < (close * 0.12)
-            small_bodies = abs(df['Close'].iloc[-1] - df['Open'].iloc[-1]) < (close * 0.012) and \
-                           abs(df['Close'].iloc[-2] - df['Open'].iloc[-2]) < (close * 0.012)
-            
-            # --- 3. VOLUME DRYING ---
-            avg_v5 = df['Volume'].iloc[-5:].mean()
-            avg_v20 = df['Volume'].iloc[-20:].mean()
-            avg_v10 = df['Volume'].iloc[-10:].mean()
-            avg_v30 = df['Volume'].iloc[-30:].mean()
-            vol_ok = avg_v5 < avg_v20 and avg_v10 < avg_v30
-            
-            # --- 4. HIGHER LOW COMPRESSION ---
-            low_ok = df['Low'].iloc[-1] > df['Low'].iloc[-6] and df['Low'].iloc[-6] > df['Low'].iloc[-11]
-            
-            # --- 5. NEAR RESISTANCE ---
-            res20 = df['High'].iloc[-21:-1].max()
-            near_res = close > (res20 * 0.95)
-            
-            # --- BONUS: VCP STRUCTURE ---
-            v30 = df['High'].iloc[-30:].max() - df['Low'].iloc[-30:].min()
-            v20 = df['High'].iloc[-20:].max() - df['Low'].iloc[-20:].min()
-            v10 = df['High'].iloc[-10:].max() - df['Low'].iloc[-10:].min()
-            vcp_bonus = v30 > v20 and v20 > v10
-            
-            if trend_ok and tight_range and small_bodies and vol_ok and low_ok and near_res:
-                score = "🔥 STRONG" if vcp_bonus else "⚡ TIGHT"
+            if is_vcp or is_breakout:
+                close = df['close'].iloc[-1]
+                rsi = calculate_rsi(df).iloc[-1]
+                patterns = [self.pattern_detector.get_pattern_badge(p['type'], p['confidence']) for p in analysis['patterns']]
+                
                 return {
                     "symbol": symbol,
                     "price": round(close, 2),
-                    "change_pct": round(((close - df['Close'].iloc[-2])/df['Close'].iloc[-2])*100, 2),
-                    "volume": int(df['Volume'].iloc[-1]),
-                    "patterns": f"VCP {score}",
-                    "indicators": f"RSI: {int(rsi)} | Near Res",
+                    "change_pct": round(((close - df['close'].iloc[-2])/df['close'].iloc[-2])*100, 2),
+                    "volume": int(df['volume'].iloc[-1]),
+                    "patterns": " | ".join(patterns),
+                    "indicators": f"RSI: {int(rsi)} | Confidence: {int(analysis['confidence']*100)}%",
                     "scan_type": "vcp"
+                }
+        except Exception as e:
+            logger.error(f"VCP scan failed for {symbol}: {e}")
+            return None
+        return None
+
+    def check_smc_criteria(self, symbol):
+        """Logic for Smart Money Concepts (SMC) Demand Zones."""
+        try:
+            df = self.data_provider.get_historical_data(symbol, period="6mo")
+            if len(df) < 50: return None
+            
+            df.columns = [c.lower() for c in df.columns]
+            df['timestamp'] = df.index
+            
+            setup = self.smc_engine.check_setup(df)
+            if setup and setup['score'] >= 7:
+                close = df['close'].iloc[-1]
+                return {
+                    "symbol": symbol,
+                    "price": round(close, 2),
+                    "change_pct": round(((close - df['close'].iloc[-2])/df['close'].iloc[-2])*100, 2),
+                    "volume": int(df['volume'].iloc[-1]),
+                    "patterns": f"SMC: {setup['signal']}",
+                    "indicators": " | ".join(setup['reasons']),
+                    "scan_type": "smc"
                 }
         except: return None
         return None
 
     def run_scan(self):
-        """Runs Nilay Swing and FNO scans."""
-        logger.info("Starting market scan...")
+        """Runs all scanners in parallel for speed."""
+        if self.is_scanning:
+            logger.warning("Scan already in progress, skipping...")
+            return []
+            
+        self.is_scanning = True
+        logger.info(f"Starting parallel market scan for {len(self.symbols_equity)} symbols...")
         results = []
         
-        # 1. Broad Equity Scan (Swing)
-        for symbol in self.symbols_equity:
+        def process_symbol(symbol):
+            symbol_results = []
+            # 1. Swing
             try:
-                res = self.check_swing_criteria(symbol)
-                if res:
-                    results.append(res)
-            except Exception as e:
-                logger.error(f"Error scanning {symbol}: {e}")
-
-        # 2. FNO Specific Scan (Tagging mostly)
-        for symbol in self.symbols_fno:
-            # If already in results, we skip or tag
-            # For simplicity, if it meets swing, it's also a swing pick
-            # But we want to show it in FNO too
-            if symbol not in [r['symbol'] for r in results]:
-                 try:
-                    # Simple pulse check for FNO if it didn't meet full swing criteria
-                    # Just to have data in FNO tab if needed, or re-run check
-                    res = self.check_swing_criteria(symbol)
-                    if res:
-                        res['scan_type'] = 'fno' # Override for FNO tab
-                        results.append(res)
-                 except: continue
-
-        # 3. SPECIAL VCP SCANPER (New Request)
-        for symbol in self.symbols_equity:
-            try:
-                res = self.check_vcp_criteria(symbol)
-                if res:
-                    results.append(res)
-            except: continue
-        
-        # Save to DB and Update Cache
-        with get_db() as conn:
-            for r in results:
-                conn.execute("""
-                    INSERT INTO scanner_results (symbol, price, change_pct, volume, scan_type, patterns, indicators)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (r['symbol'], r['price'], r['change_pct'], r['volume'], r['scan_type'], r['patterns'], r['indicators']))
-                
-                # Telegram: Alert ONLY if in 0-3% range
-                if 0 <= r['change_pct'] <= 3.0:
-                    if not is_already_alerted(r['symbol']):
-                        alert_msg = f"🚀 *{r['symbol']}* ({r['change_pct']:+.2f}%)\nPrice: ₹{r['price']}\nPatterns: {r['patterns']}\nType: {r['scan_type'].upper()}"
-                        if send_telegram_alert(alert_msg):
-                            log_alert(r['symbol'], r['price'], r['change_pct'], r['scan_type'], alert_msg)
+                swing = self.check_swing_criteria(symbol)
+                if swing: symbol_results.append(swing)
+            except: pass
             
-            conn.commit()
-        
-        # Dashboard Cache: ONLY 0-3% stocks
-        dashboard_list = [r for r in results if 0 <= r['change_pct'] <= 3.0]
-        save_dashboard_cache(dashboard_list)
-        
-        logger.info(f"Scan complete. Found {len(results)} total, {len(dashboard_list)} in 0-3% zone.")
+            # 2. VCP
+            try:
+                vcp = self.check_vcp_criteria(symbol)
+                if vcp: symbol_results.append(vcp)
+            except: pass
+            
+            # 3. SMC
+            try:
+                smc = self.check_smc_criteria(symbol)
+                if smc: symbol_results.append(smc)
+            except: pass
+            
+            return symbol_results
+
+        def fetch_chartink(scanner_obj):
+            try:
+                stocks = scanner_obj.fetch_results()
+                results = []
+                for s in stocks:
+                    results.append({
+                        "symbol": s['symbol'],
+                        "price": s['price'],
+                        "change_pct": s['change_pct'],
+                        "volume": s['volume'],
+                        "patterns": f"Chartink: {scanner_obj.scanner_name}",
+                        "indicators": "Live Alert",
+                        "scan_type": "chartink"
+                    })
+                return results
+            except:
+                return []
+
+        try:
+            # Parallel internal scanning (Python logic)
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                # 1. run internal symbol checks
+                future_to_sym = {executor.submit(process_symbol, sym): sym for sym in self.symbols_equity}
+                
+                # 2. run Chartink scanners in parallel too
+                future_to_chartink = {executor.submit(fetch_chartink, c): c.scanner_name for c in self.chartink_scanners}
+                
+                for future in as_completed(future_to_sym):
+                    res_list = future.result()
+                    if res_list:
+                        results.extend(res_list)
+                        
+                for future in as_completed(future_to_chartink):
+                    chartink_res = future.result()
+                    if chartink_res:
+                        results.extend(chartink_res)
+
+        except Exception as e:
+            logger.error(f"Global scan failed: {e}")
+        finally:
+            self.is_scanning = False
+
+        # Save to DB and Update Cache
         return results
 
 if __name__ == "__main__":

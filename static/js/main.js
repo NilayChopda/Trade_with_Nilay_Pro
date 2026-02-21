@@ -107,7 +107,8 @@ function loadScanner(type) {
         .then(data => {
             const stocks = data.results || [];
             if (stocks.length === 0) {
-                container.innerHTML = `<tr><td colspan="${type === 'vcp' ? 6 : 5}" class="text-center py-4 text-secondary">No stocks found.</td></tr>`;
+                const cols = (type === 'vcp' || type === 'smc') ? 6 : (type === 'chartink' ? 5 : 5);
+                container.innerHTML = `<tr><td colspan="${cols}" class="text-center py-4 text-secondary">No stocks found.</td></tr>`;
                 return;
             }
 
@@ -124,6 +125,31 @@ function loadScanner(type) {
                         <td class="text-secondary small">${stock.indicators}</td>
                         <td class="text-end pe-4">
                             <button class="btn btn-sm btn-outline-danger" onclick="showAIReport('${stock.symbol}')">VCP Research</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } else if (type === 'chartink') {
+                container.innerHTML = stocks.map(stock => `
+                    <tr>
+                        <td class="ps-4 fw-bold">${stock.symbol}</td>
+                        <td>₹${stock.price.toFixed(2)}</td>
+                        <td><span class="badge ${stock.change_pct >= 0 ? 'bg-success' : 'bg-danger'}">${stock.change_pct.toFixed(2)}%</span></td>
+                        <td class="text-info small">${stock.patterns}</td>
+                        <td class="text-end pe-4">
+                            <button class="btn btn-sm btn-outline-info" onclick="showAIReport('${stock.symbol}')">Research</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } else if (type === 'smc') {
+                container.innerHTML = stocks.map(stock => `
+                    <tr>
+                        <td class="ps-4 fw-bold">${stock.symbol}</td>
+                        <td>₹${stock.price.toFixed(2)}</td>
+                        <td><span class="badge ${stock.change_pct >= 0 ? 'bg-success' : 'bg-danger'}">${stock.change_pct.toFixed(2)}%</span></td>
+                        <td class="text-warning fw-bold">${stock.patterns}</td>
+                        <td class="text-secondary small">${stock.indicators}</td>
+                        <td class="text-end pe-4">
+                            <button class="btn btn-sm btn-outline-primary" onclick="showAIReport('${stock.symbol}')">Institutional Research</button>
                         </td>
                     </tr>
                 `).join('');
@@ -227,5 +253,23 @@ window.addEventListener('load', () => {
                 .then(res => res.json())
                 .then(data => updateDashboardTable(data));
         }
-    }, 60000);
+    }, 30000); // Faster update (30s)
+
+    // Check Scan Status
+    setInterval(() => {
+        fetch('/api/scan-status')
+            .then(res => res.json())
+            .then(data => {
+                const statusEl = document.getElementById('market-status');
+                if (data.is_scanning) {
+                    statusEl.innerHTML = '<i class="bi bi-circle-fill small me-1"></i> SCANNING...';
+                    statusEl.classList.remove('text-info');
+                    statusEl.classList.add('text-warning');
+                } else {
+                    statusEl.innerHTML = '<i class="bi bi-circle-fill small me-1"></i> LIVE';
+                    statusEl.classList.remove('text-warning');
+                    statusEl.classList.add('text-info');
+                }
+            });
+    }, 5000);
 });

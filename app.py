@@ -11,6 +11,7 @@ from ai_reports import AIReportGenerator, get_cached_report
 from eod_reports import get_eod_history, EODReportGenerator
 from datetime import datetime
 import pytz
+import threading
 
 # Initialize App
 app = Flask(__name__)
@@ -54,10 +55,18 @@ def daily_tasks():
 
 # Scheduler
 scheduler = BackgroundScheduler(timezone=IST)
-# Run scanner every 5 mins during market hours (approx)
+# Run scanner every 5 mins during market hours
 scheduler.add_job(func=scheduled_scan, trigger="interval", minutes=5)
 # Fetch announcements every 6 hours
 scheduler.add_job(func=ann_fetcher.fetch_latest, trigger="interval", hours=6)
+scheduler.start()
+
+# Initial Startup Scan
+def startup_scan():
+    logger.info("Starting initial market scan...")
+    scheduled_scan()
+
+threading.Thread(target=startup_scan, daemon=True).start()
 # Run EOD report at 3:45 PM IST
 scheduler.add_job(func=daily_tasks, trigger='cron', hour=15, minute=45)
 scheduler.start()
@@ -92,8 +101,8 @@ def api_eod_history():
 
 @app.route('/scan-now')
 def scan_now():
-    """Manual trigger for scanning."""
-    scan_type = request.args.get('type', 'swing')
+    """Manual trigger for scanners."""
+    scan_type = request.args.get('type', 'swing') # 'swing', 'fno', 'vcp', 'smc', 'chartink'
     results = scanner.run_scan() # Runs all, updates cache
     
     # Filter for the requested type to return to frontend
@@ -111,6 +120,10 @@ def scan_now():
 def handle_connect():
     logger.info("Client connected")
     emit('status', {'data': 'Connected to Trade with Nilay Terminal'})
+
+@app.route('/api/scan-status')
+def scan_status():
+    return jsonify({"is_scanning": scanner.is_scanning})
 
 if __name__ == '__main__':
     # For local testing, use socketio.run
