@@ -66,6 +66,7 @@ def init_db():
                 category TEXT,
                 ann_date TIMESTAMP,
                 link TEXT,
+                is_important INTEGER DEFAULT 0,
                 fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)

@@ -38,6 +38,16 @@ class AnnouncementFetcher:
             logger.error(f"Error fetching announcements: {e}")
             return []
 
+    def _is_important(self, title, desc):
+        """Checks if an announcement is high-impact."""
+        keywords = [
+            'RESULT', 'EARNINGS', 'DIVIDEND', 'BONUS', 'SPLIT', 'MERGER', 
+            'ACQUISITION', 'ORDER', 'CONTRACT', 'CONCALL', 'MEETING', 
+            'AWARD', 'JOINT VENTURE', 'BUYBACK', 'LOAN', 'DEFAULT', 'FRAUD'
+        ]
+        text = (title + " " + desc).upper()
+        return any(k in text for k in keywords)
+
     def _save_to_db(self, data):
         """Saves announcements to the database, avoids duplicates."""
         with get_db() as conn:
@@ -49,13 +59,15 @@ class AnnouncementFetcher:
                 link = item.get('attchmntText', '')
                 dt_str = item.get('attchmntDate', datetime.now().strftime("%Y-%m-%d"))
                 
+                important = 1 if self._is_important(title, desc) else 0
+                
                 # Check for duplicate link or description
                 cursor = conn.execute("SELECT id FROM announcements WHERE symbol = ? AND title = ? AND ann_date = ?", (symbol, title, dt_str))
                 if not cursor.fetchone():
                     conn.execute("""
-                        INSERT INTO announcements (symbol, title, description, category, ann_date, link)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (symbol, title, desc, category, dt_str, link))
+                        INSERT INTO announcements (symbol, title, description, category, ann_date, link, is_important)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (symbol, title, desc, category, dt_str, link, important))
             conn.commit()
         logger.info(f"Announcements updated: {len(data)} items processed.")
 

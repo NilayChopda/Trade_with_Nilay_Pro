@@ -12,10 +12,18 @@ logger = logging.getLogger(__name__)
 # Kite API Key (provided by user)
 KITE_API_KEY = os.environ.get("KITE_API_KEY", "927xjtvndq82vjc3")
 
-class DataProvider:
-    """Provides market data using Kite, Yahoo Finance, and Unofficial APIs."""
-    
-    def __init__(self):
+    def get_all_nse_symbols(self):
+        """Fetches all listed equity symbols from NSE."""
+        url = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
+        try:
+            df = pd.read_csv(url)
+            # Standard NSE Equity list has 'SYMBOL' column
+            symbols = df['SYMBOL'].tolist()
+            logger.info(f"Fetched {len(symbols)} symbols from NSE.")
+            return [s for s in symbols if isinstance(s, str)]
+        except Exception as e:
+            logger.error(f"Error fetching symbols from NSE: {e}")
+            return ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK"]
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"

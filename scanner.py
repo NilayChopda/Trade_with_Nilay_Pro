@@ -38,8 +38,14 @@ class MarketScanner:
         ]
 
     def _load_symbols(self):
-        """Loads symbols from local data/symbols.json."""
+        """Loads all 2600+ NSE symbols for broad scanning."""
         try:
+            # 1. Try to get all listed stocks from NSE directly
+            symbols = self.data_provider.get_all_nse_symbols()
+            if len(symbols) > 500:
+                return symbols
+                
+            # 2. Fallback to local data
             path = Path(__file__).parent / "data" / "symbols.json"
             if path.exists():
                 with open(path, 'r') as f:
@@ -222,7 +228,7 @@ class MarketScanner:
 
         try:
             # Parallel internal scanning (Python logic)
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            with ThreadPoolExecutor(max_workers=50) as executor:
                 # 1. run internal symbol checks
                 future_to_sym = {executor.submit(process_symbol, sym): sym for sym in self.symbols_equity}
                 

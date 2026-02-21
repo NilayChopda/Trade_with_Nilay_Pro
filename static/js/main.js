@@ -192,17 +192,23 @@ function loadAnnouncements(query = '') {
                 return;
             }
             container.innerHTML = data.map(ann => `
-                <div class="col-md-6 col-lg-4">
-                    <div class="card bg-black h-100 p-3 shadow-sm">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">${ann.symbol}</span>
-                            <span class="text-secondary x-small">${ann.ann_date}</span>
+                <div class="col-md-6 mb-3">
+                    <div class="card bg-dark border-${ann.is_important ? 'danger' : 'secondary'} h-100 shadow-sm animate-fade-in">
+                        <div class="card-body p-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <span class="badge bg-primary">${ann.symbol}</span>
+                                ${ann.is_important ? '<span class="badge bg-danger pulse-red"><i class="bi bi-exclamation-triangle-fill"></i> HIGH IMPACT</span>' : ''}
+                                <small class="text-secondary">${new Date(ann.ann_date).toLocaleDateString()}</small>
+                            </div>
+                            <h6 class="card-title text-light fw-bold mb-2">${ann.title}</h6>
+                            <p class="card-text text-secondary small mb-3 text-truncate-2">${ann.description}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="badge bg-dark border border-secondary text-secondary">${ann.category}</span>
+                                <a href="${ann.link}" target="_blank" class="btn btn-sm btn-outline-info ${ann.link ? '' : 'disabled'}">
+                                    <i class="bi bi-file-earmark-pdf"></i> View PDF
+                                </a>
+                            </div>
                         </div>
-                        <h6 class="fw-bold text-light mb-1">${ann.title}</h6>
-                        <p class="text-secondary small mb-3 flex-grow-1">${ann.description.substring(0, 120)}...</p>
-                        <a href="${ann.link}" target="_blank" class="mt-auto text-primary text-decoration-none small fw-medium">
-                            View File <i class="bi bi-box-arrow-up-right ms-1"></i>
-                        </a>
                     </div>
                 </div>
             `).join('');
