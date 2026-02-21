@@ -36,34 +36,60 @@ class AlertMonitor:
         try:
             conn = get_conn()
             
-            # Get stocks from last check that haven't been alerted
-            last_check_ts = int(self.last_check.timestamp())
-            
+            # Get unalerted results
             query = """
-                SELECT DISTINCT sr.symbol, sr.price, sr.change_pct, sr.volume, sr.timestamp
+                SELECT sr.symbol, sr.price, sr.change_pct, sr.volume, sr.timestamp, s.name, s.scanner_type
                 FROM scanner_results sr
-                WHERE sr.timestamp > ?
-                AND sr.change_pct >= 0 AND sr.change_pct <= 3.0
-                AND sr.alerted = 0
+                JOIN scanners s ON sr.scanner_id = s.id
+                WHERE sr.alerted = 0
                 ORDER BY sr.timestamp DESC
+                LIMIT 50
             """
             
-            cursor = conn.execute(query, (last_check_ts,))
+            cursor = conn.execute(query)
             new_stocks = cursor.fetchall()
             conn.close()
             
             if new_stocks:
-                logger.info(f"Found {len(new_stocks)} new stocks to alert")
+                logger.info(f"Found {len(new_stocks)} unalerted stocks")
                 
                 for stock in new_stocks:
-                    symbol, price, change_pct, volume, timestamp = stock
+                    symbol, price, change_pct, volume, timestamp, scanner_name, scanner_type = stock
                     
-                    # Skip if already alerted in this session
+                    # Skip if already alerted in this session (double check)
                     if symbol in self.alerted_stocks:
                         continue
+
+                    # Filter Logic
+                    should_alert = False
+                    
+                    if "SMC" in scanner_name or "SMC" in str(scanner_type):
+                        should_alert = True
+                    elif 0 <= change_pct <= 3.5:
+                        should_alert = True
+                        
+                    if not should_alert:
+                        # Mark as alerted to avoid reprocessing
+                        self.mark_as_alerted(symbol, timestamp) 
+                        continue
+                    
+                    # Check timestamp age (don't alert on very old scans if restarting)
+                    try:
+                        ts = int(timestamp)
+                    except:
+                        # Handle string timestamp (legacy)
+                        try:
+                            dt = datetime.strptime(str(timestamp), "%Y-%m-%d %H:%M:%S")
+                            ts = int(dt.timestamp())
+                        except:
+                            ts = int(time.time()) # Fallback
+                            
+                    if time.time() - ts > 3600 * 4: # Older than 4 hours
+                         self.mark_as_alerted(symbol, timestamp)
+                         continue
                     
                     # Send Telegram alert
-                    self.send_stock_alert(symbol, price, change_pct, volume, timestamp)
+                    self.send_stock_alert(symbol, price, change_pct, volume, timestamp, scanner_name)
                     
                     # Mark as alerted in database
                     self.mark_as_alerted(symbol, timestamp)
@@ -71,7 +97,7 @@ class AlertMonitor:
                     # Add to session cache
                     self.alerted_stocks.add(symbol)
                     
-                    # Small delay to avoid rate limiting
+                    # Small delay
                     time.sleep(0.5)
             
             # Update last check time
@@ -80,16 +106,20 @@ class AlertMonitor:
         except Exception as e:
             logger.error(f"Error checking for new stocks: {e}", exc_info=True)
     
-    def send_stock_alert(self, symbol, price, change_pct, volume, timestamp):
+    def send_stock_alert(self, symbol, price, change_pct, volume, timestamp, scanner_name="Scanner"):
         """Send formatted Telegram alert for a stock"""
         try:
             # Format timestamp
-            dt = datetime.fromtimestamp(timestamp)
+            try:
+                dt = datetime.fromtimestamp(int(timestamp))
+            except:
+                dt = datetime.now()
+                
             time_str = dt.strftime("%H:%M:%S")
             
             # Create alert message
             message = f"""
-🎯 *NEW SETUP ALERT*
+🎯 *{scanner_name.upper()} ALERT*
 
 📊 *{symbol}*
 💰 Price: ₹{price:.2f}
@@ -97,7 +127,7 @@ class AlertMonitor:
 📊 Volume: {volume:,}
 🕐 Time: {time_str}
 
-✅ *In 0-3% Range*
+🚀 *Setup Detected*
             """.strip()
             
             # Send to Telegram

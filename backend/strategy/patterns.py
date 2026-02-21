@@ -133,3 +133,34 @@ class DeadVolumeStrategy(Strategy):
                 })
                 
         return signals
+
+class AdvancedPatternsStrategy(Strategy):
+    """
+    Wraps the PatternDetector to find VCP, IPO Bases, Rocket Bases, etc.
+    """
+    
+    def __init__(self):
+        super().__init__("Advanced Patterns", "Detects VCP, IPB, Rocket Base, etc.")
+        from backend.strategy.pattern_detector import PatternDetector
+        self.detector = PatternDetector()
+    
+    def analyze(self, df: pd.DataFrame) -> List[Dict[str, Any]]:
+        if not self.validate_data(df):
+            return []
+            
+        # Get all patterns from detector
+        # We pass a dummy symbol here
+        analysis = self.detector.analyze(df, "TEMP")
+        
+        signals = []
+        for pattern in analysis.get('patterns', []):
+            signals.append({
+                "strategy": self.name,
+                "signal": "BUY",  # Advanced patterns are usually bullish
+                "pattern": pattern['type'],
+                "price": df['close'].iloc[-1],
+                "timestamp": df.index[-1],
+                "confidence": pattern.get('confidence', 0.8)
+            })
+            
+        return signals

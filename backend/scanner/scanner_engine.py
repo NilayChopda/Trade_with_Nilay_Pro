@@ -1,10 +1,11 @@
 """
 Scanner Engine for Trade With Nilay
-Orchestrates Chartink scanners + equity filters + Telegram alerts
+Orchestrates multiple Chartink scanners, AI scoring, and Telegram alerts.
 
 Production features:
-- Multi-scanner support
-- Equity filter (0% to +3% change)
+- Multi-scanner support (Swing Pick, VCP, FnO, Rocket)
+- NSE Cash segment only (no ETFs, Indices, Funds)
+- AI confidence filtering for Telegram (score >= 8.0)
 - Automatic deduplication
 - Continuous scanning mode
 - Database storage
@@ -20,15 +21,15 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from database.db import (
+from backend.database.db import (
     insert_scanner, insert_scanner_result, get_scanner_results,
-    mark_scanner_alerted, get_conn
+    mark_scanner_alerted, get_conn, update_scanner_result_ai
 )
 from scanner.chartink_scanner import ChartinkScanner
 from services.telegram_v2 import send_scanner_alert, send_equity_filter_alert, get_notifier
 from ai.scorer import AIScorer
 from ai.explainer import generate_explanation
-from strategy.patterns import DojiStrategy, InsideBarStrategy, DeadVolumeStrategy
+from strategy.patterns import DojiStrategy, InsideBarStrategy, DeadVolumeStrategy, AdvancedPatternsStrategy
 from strategy.breakout import BreakoutStrategy
 import yfinance as yf
 import pandas as pd
@@ -49,7 +50,7 @@ class ScannerEngine:
         self.alerted_symbols: Set[str] = set()  # Prevent duplicate alerts
         self.scan_interval = 60  # seconds between scans
         self.scorer = AIScorer()
-        self.strategies = [DojiStrategy(), InsideBarStrategy(), DeadVolumeStrategy(), BreakoutStrategy()]
+        self.strategies = [DojiStrategy(), InsideBarStrategy(), DeadVolumeStrategy(), BreakoutStrategy(), AdvancedPatternsStrategy()]
         
         logger.info("Scanner Engine initialized with AI Scorer")
     
@@ -139,14 +140,17 @@ class ScannerEngine:
             logger.info(f"Got {len(results)} results from {scanner_name}")
             
             # Store in database
+            now_ts = int(time.time())
             for stock in results:
+                stock['timestamp'] = now_ts
                 try:
                     insert_scanner_result(
                         scanner_id=scanner_id,
                         symbol=stock['symbol'],
                         price=stock.get('price'),
                         change_pct=stock.get('change_pct'),
-                        volume=stock.get('volume')
+                        volume=stock.get('volume'),
+                        timestamp=now_ts
                     )
                 except Exception as e:
                     logger.debug(f"Error storing result for {stock.get('symbol')}: {e}")
@@ -157,21 +161,23 @@ class ScannerEngine:
             logger.error(f"Error running scanner {scanner_name}: {e}", exc_info=True)
             return []
     
-    def run_all_scanners(self) -> Dict[str, List[Dict]]:
+    def run_all_scanners(self) -> List[Dict]:
         """
-        Run all configured scanners
+        Run all configured scanners and return stocks with their scanner type
         
         Returns:
-            Dict mapping scanner name to results
+            List of stock dicts with 'scanner_type' added
         """
-        all_results = {}
+        all_stocks = []
         
         for scanner_config in self.scanners:
-            scanner_name = scanner_config['name']
             results = self.run_scanner(scanner_config)
-            all_results[scanner_name] = results
+            # Tag each stock with its source scanner type for categorization later
+            for stock in results:
+                stock['scanner_type'] = scanner_config['type']
+            all_stocks.extend(results)
         
-        return all_results
+        return all_stocks
     
     def deduplicate_stocks(self, stocks: List[Dict]) -> List[Dict]:
         """Remove stocks that were already alerted"""
@@ -255,7 +261,15 @@ class ScannerEngine:
                 "fno": {} # Add FnO bias later if needed
             }
             
-            return self.scorer.score_setup(clean_symbol, setup_data)
+            # 6. Get Primary Pattern for display
+            from backend.strategy.pattern_detector import PatternDetector
+            detector = PatternDetector()
+            pattern_analysis = detector.analyze(df, clean_symbol)
+            
+            analysis = self.scorer.score_setup(clean_symbol, setup_data)
+            analysis['primary_pattern'] = pattern_analysis.get('primary_pattern')
+            
+            return analysis
         except Exception as e:
             logger.error(f"AI Analysis failed for {original_symbol}: {e}")
             return {"score": 0.0, "rating": "ERROR", "reasons": [f"Runtime error: {str(e)}"]}
@@ -283,79 +297,129 @@ class ScannerEngine:
         }
         
         # Run all scanners
-        all_results = self.run_all_scanners()
+        merged_stocks = self.run_all_scanners()
         
-        # Merge results and deduplicate
-        merged_stocks = []
-        for scanner_name, stocks in all_results.items():
-            merged_stocks.extend(stocks)
-        
-        # Remove duplicates by symbol
+        # Remove duplicates by symbol (Keep priority to FnO or highest change)
         unique_stocks = {}
         for stock in merged_stocks:
             symbol = stock.get('symbol')
             if symbol:
-                unique_stocks[symbol] = stock
+                if symbol not in unique_stocks:
+                    unique_stocks[symbol] = stock
+                else:
+                    # If duplicate, keep FnO type if available
+                    if stock.get('scanner_type') == 'fno':
+                        unique_stocks[symbol] = stock
         
         merged_stocks = list(unique_stocks.values())
         stats['total_stocks'] = len(merged_stocks)
         
         logger.info(f"Total unique stocks from all scanners: {stats['total_stocks']}")
         
-        # Apply equity filter (0% to +3%)
-        filtered_stocks = self.apply_equity_filter(merged_stocks, min_change=0.0, max_change=3.0)
+        # --- NSE CASH FILTER ONLY (No SwingAlgo 0-3% restriction) ---
+        def is_nse_cash(stock):
+            sym = stock.get('symbol', '').upper()
+            exclude_keywords = ['NIFTY', 'BANKNIFTY', 'BEES', 'ETF', 'FUND', 'GOLD',
+                                'REIT', 'INVIT', 'INDEX', 'LIQUID', 'SILVER', 'NASDAQ']
+            if any(k in sym for k in exclude_keywords):
+                return False
+            if '-' in sym:
+                return False
+            return True
+
+        filtered_stocks = [s for s in merged_stocks if is_nse_cash(s)]
         stats['filtered_stocks'] = len(filtered_stocks)
+        logger.info(f"NSE Cash filter: {len(filtered_stocks)}/{len(merged_stocks)} stocks passed")
         
         if filtered_stocks:
-            # Deduplicate (don't alert same stock twice)
+            # Deduplicate (don't alert same stock twice in one run)
             new_stocks = self.deduplicate_stocks(filtered_stocks)
             
             if new_stocks and send_alerts:
-                # Send AI-Enhanced Telegram alert
                 logger.info(f"Scoring and alerting {len(new_stocks)} stocks...")
-                
                 notifier = get_notifier()
+                
                 for stock in new_stocks:
                     try:
-                        # 1. Get AI Score
+                        # 1. AI Score
                         analysis = self.get_ai_analysis(stock)
                         stock['ai_analysis'] = analysis
                         stock['explanation'] = generate_explanation(analysis, stock['symbol'])
                         
-                        # 2. Send detailed alert if score is decent (> 5) or all if needed
-                        # We'll send all for now but highlight the score
-                        # 2. Build setup title based on patterns
+                        # 2. Category
                         patterns = [s.get('pattern') for s in analysis.get('strategies', [])]
-                        header = "AI TRADE SETUP"
-                        if "Price Breakout" in patterns:
-                            header = "💥 BREAKOUT ALERT"
+                        primary_pattern = analysis.get('primary_pattern') or (patterns[0] if patterns else "Market Setup")
                         
-                        message = (
-                            f"🔔 *{header}: {stock['symbol']}*\n\n"
-                            f"{stock['explanation']}\n\n"
-                            f"Score: {analysis['score']}/10 ({analysis['rating']})\n"
-                            f"Price: ₹{stock['price']:,.2f} ({stock['change_pct']:+.2f}%)\n"
-                            f"Volume: {stock['volume']:,}\n"
-                            f"Time: {datetime.now().strftime('%H:%M:%S')}"
+                        category = "Rocket"  # Default
+                        if "IPO_BASE" in patterns or "IPB" in patterns:
+                            category = "IPO"
+                        elif "VCP" in patterns:
+                            category = "VCP"
+                        elif stock.get('scanner_type') == 'fno':
+                            category = "FNO"
+                        elif stock.get('change_pct', 0) > 4.0:
+                            category = "Rocket"
+                        
+                        final_pattern = f"{category} | {primary_pattern}"
+                        
+                        # 3. Confidence gate — only alert high-conviction setups
+                        is_high_confidence = analysis.get('score', 0) >= 8.0
+                        
+                        # 4. Always update database
+                        update_scanner_result_ai(
+                            symbol=stock['symbol'],
+                            timestamp=stock.get('timestamp'),
+                            ai_score=analysis.get('score'),
+                            ai_rating=analysis.get('rating'),
+                            patterns=final_pattern
                         )
-                        notifier.send_message(message)
-                        
-                        stats['alerted_stocks'] += 1
-                        time.sleep(1) # Small gap between alerts
+
+                        # 5. Send Telegram only for high-confidence
+                        if send_alerts and is_high_confidence:
+                            header = f"AI {category.upper()} SETUP"
+                            emojis = "🔔"
+                            if category == "VCP":
+                                header = "🏆 CONVICTION VCP SETUP"
+                                emojis = "💎💎💎"
+                            elif category == "IPO":
+                                header = "💰 IPO BASE SETUP"
+                                emojis = "🌟"
+                            elif category == "Rocket":
+                                header = "🚀 MOMENTUM ROCKET"
+                                emojis = "🔥"
+                            if "BREAKOUT" in patterns:
+                                header = f"💥 BREAKOUT: {category}"
+                                emojis = "⚡"
+                            
+                            message = (
+                                f"{emojis} *{header}*\n"
+                                f"🌐 *Symbol:* `{stock['symbol']}`\n\n"
+                                f"📝 *Analysis:* {stock['explanation']}\n\n"
+                                f"📊 *Stats:*\n"
+                                f"├ Price: ₹{stock['price']:,.2f} ({stock['change_pct']:+.2f}%)\n"
+                                f"├ Volume: {stock['volume']:,}\n"
+                                f"└ Score: *{analysis['score']}/10* ({analysis['rating']})\n\n"
+                                f"🔍 *Setup:* {final_pattern}\n"
+                                f"⏰ *Time:* {datetime.now().strftime('%H:%M IST')}\n\n"
+                                f"🎯 _Trade With Nilay Terminal_"
+                            )
+                            notifier.send_message(message)
+                            stats['alerted_stocks'] += 1
+                        time.sleep(0.5)
                         
                     except Exception as e:
                         logger.error(f"Error scoring/alerting {stock.get('symbol')}: {e}")
         else:
-            logger.info("No stocks in equity filter range (0% to +3%)")
+            logger.info("No NSE Cash stocks found after filtering")
         
         stats['duration_sec'] = time.time() - stats['start_time']
         
         logger.info("=" * 60)
         logger.info("Scanner run complete")
-        logger.info(f"  Total stocks: {stats['total_stocks']}")
-        logger.info(f"  Filtered (0-3%): {stats['filtered_stocks']}")
-        logger.info(f"  Alerted: {stats['alerted_stocks']}")
-        logger.info(f"  Duration: {stats['duration_sec']:.1f}s")
+        logger.info(f"  Total stocks:   {stats['total_stocks']}")
+        logger.info(f"  After NSE Cash: {stats['filtered_stocks']}")
+        logger.info(f"  Alerted:        {stats['alerted_stocks']}")
+        logger.info(f"  Duration:       {stats['duration_sec']:.1f}s")
         logger.info("=" * 60)
         
         return stats

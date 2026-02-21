@@ -60,13 +60,25 @@ class AIScorer:
             score += 1.0 # Ultra volume
             factors.append("HNI/Institutional Volume")
             
-        if "Price Breakout" in patterns:
+        if "Price Breakout" in patterns or "BREAKOUT" in patterns:
             score += 2.0
             factors.append("Confirmed Price Breakout")
             # Confluence: Breakout + Volume
-            if volume_mult > 2.0:
+            if volume_mult > 1.8:
                 score += 1.0
-                factors.append("High-Volume Breakout (Strong)")
+                factors.append("High-Volume Breakout")
+
+        if "VCP" in patterns:
+            score += 3.5 # Very high weight for VCP
+            factors.append("Minervini-Style VCP (High Conviction)")
+            
+        if "IPO_BASE" in patterns or "IPB" in patterns:
+            score += 3.0
+            factors.append("IPO Base Accumulation")
+
+        if "ROCKET_BASE" in patterns:
+            score += 2.5
+            factors.append("Rocket Momentum Base")
 
         # 2. Trend Alignment (Max 2 points)
         trend = data.get('price_action', {}).get('trend', 'NEUTRAL')

@@ -1,96 +1,74 @@
-# Trade With Nilay - Professional Trading Platform
 
-![Status](https://img.shields.io/badge/status-active-success.svg)
-![Version](https://img.shields.io/badge/version-2.0-blue.svg)
+# 🚀 Trade With Nilay - Professional Stock Market Terminal
 
-Professional Indian equity quantitative analysis system with real-time scanning, AI analysis, and pattern detection.
+A production-ready quantitative analysis platform for the Indian stock market (NSE & BSE).
 
-## 🚀 Features
-
-- **Real-Time Stock Scanning** - Chartink integration with 5-minute auto-refresh
-- **AI Technical Analysis** - Intelligent scoring and pattern recognition
-- **Pattern Detection** - Breakout, Order Block, Support/Resistance, Consolidation
-- **Telegram Alerts** - Real-time notifications for 0-3% setups
-- **FnO Analysis** - Dedicated F&O stock scanner with live prices
-- **Mobile PWA** - Install on phone like a native app
-
-## 📱 Access
-
-**Live Dashboard:** [https://trade-with-nilay.streamlit.app](https://trade-with-nilay.streamlit.app)
-
-## 🛠️ Local Development
-
-### Prerequisites
-- Python 3.8+
-- Chrome/Chromium (for Selenium)
-- Node.js (for mobile tunneling)
-
-### Quick Start
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run locally
-streamlit run frontend/app.py
-```
-
-### 24/7 Background Mode
-```batch
-# Windows
-start_all_24x7.bat
-
-# This starts:
-# - Scanner Engine (Chartink scraping)
-# - Alert Monitor (Telegram notifications)
-# - Dashboard (Web interface)
-```
-
-## 📊 Architecture
-
-```
-Trade_with_Nilay/
-├── backend/
-│   ├── scanner/          # Chartink integration
-│   ├── services/         # Alert monitor, Telegram
-│   ├── strategy/         # Pattern detection
-│   └── database/         # SQLite data layer
-├── frontend/
-│   ├── app.py           # Streamlit dashboard
-│   └── static/          # PWA assets
-└── .streamlit/          # Cloud config
-```
-
-## 🔐 Environment Variables
-
-Create `.env` file:
-```env
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-```
-
-## 📈 Deployment
-
-### Streamlit Cloud (Recommended)
-1. Push to GitHub
-2. Connect at [streamlit.io/cloud](https://streamlit.io/cloud)
-3. Add secrets in dashboard
-4. Deploy!
-
-### Railway.app
-```bash
-railway login
-railway init
-railway up
-```
-
-## 🤝 Contributing
-
-This is a personal trading tool. For suggestions, contact via Telegram.
-
-## 📄 License
-
-Private - All Rights Reserved
+## 📡 Live URL: [Trade-with-nilay.com](http://Trade-with-nilay.com)
 
 ---
 
-**Built with ❤️ for Indian Stock Market Traders**
+## 🛠 Features
+
+-   **Scanner Engine**: Recreates "Nilay Swing Pick" and "FNO Autopick" logic using 7 technical criteria.
+-   **Real-Time Dashboard**: Automatic updates every 5 minutes (Socket.IO).
+-   **AI Reports**: Fundamental analysis and automated strategy insights.
+-   **Telegram Alerts**: Instant notifications for stocks entering the 0% to +3% entry range.
+-   **Announcements**: Centralized feed for NSE/BSE corporate filings.
+-   **EOD Reports**: Automated daily performance summaries and archiving.
+
+---
+
+## 🏗 Technology Stack
+
+-   **Backend**: Python / Flask / Flask-SocketIO
+-   **Database**: SQLite (WAL Mode)
+-   **Task Queue**: APScheduler
+-   **Frontend**: Bootstrap 5 / Vanilla JS
+-   **Data Sources**: yfinance, NSE Unofficial APIs, Kite API
+
+---
+
+## 📦 Local Setup
+
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/nilaychopda/trade-with-nilay.git
+    cd trade-with-nilay
+    ```
+
+2.  Install dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+3.  Initialize Database:
+    ```bash
+    python database.py
+    ```
+
+4.  Run Application:
+    ```bash
+    python app.py
+    ```
+
+---
+
+## 🌐 Render Deployment (24/7)
+
+1.  Connect this GitHub repository to [Render.com](https://render.com).
+2.  Choose **Web Service**.
+3.  Render will auto-detect `render.yaml` for configuration.
+4.  Ensure a Persistent Disk is attached at `/data` if `DATABASE_URL` is configured to point there.
+
+---
+
+## ⚙️ Configuration (Environment Variables)
+
+-   `KITE_API_KEY`: `927xjtvndq82vjc3`
+-   `TELEGRAM_BOT_TOKEN`: `8289967600:AAFSLnB1eCSYpKOdIenz398AcdJ5utcNyIs`
+-   `TELEGRAM_CHAT_ID`: `810052560`
+
+---
+
+## 🛡 License
+Private and Confidential. (c) 2026 Nilay Chopda.

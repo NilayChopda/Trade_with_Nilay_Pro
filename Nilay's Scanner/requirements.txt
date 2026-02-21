@@ -8,3 +8,4 @@ selenium>=4.15.0
 python-telegram-bot>=20.0
 nsepython>=2.3
 lxml>=4.9.0
+google-generativeai>=0.3.0

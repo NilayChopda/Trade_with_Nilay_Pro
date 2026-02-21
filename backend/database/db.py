@@ -1,439 +1,327 @@
+
 import sqlite3
+import os
+import logging
+from datetime import datetime
 from pathlib import Path
-import threading
 import time
+import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
-DB_PATH = ROOT / "database" / "trade_with_nilay.db"
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Configure Logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Database Configuration
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "trade_with_nilay.db"
+
+_INITIALIZED = False
 
 def get_conn():
+    """Get a connection to the SQLite database."""
+    global _INITIALIZED
+    
+    # Ensure tables exist before connecting
+    if not _INITIALIZED and not os.path.exists(DB_PATH):
+        init_db()
+    elif not _INITIALIZED:
+        # Check if tables actually exist
+        try:
+            conn = sqlite3.connect(str(DB_PATH))
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('stocks', 'symbols');")
+            tables = [r[0] for r in cursor.fetchall()]
+            if 'stocks' not in tables or 'symbols' not in tables:
+                init_db()
+            else:
+                # 🚀 AUTO-MIGRATION: Check for missing columns
+                cursor.execute("PRAGMA table_info(scanner_results)")
+                columns = [row[1] for row in cursor.fetchall()]
+                if columns and 'patterns' not in columns:
+                    logger.info("Adding missing column 'patterns' to scanner_results")
+                    cursor.execute("ALTER TABLE scanner_results ADD COLUMN patterns TEXT")
+                
+                # Check for other missing columns if needed
+                if columns and 'ai_score' not in columns:
+                    cursor.execute("ALTER TABLE scanner_results ADD COLUMN ai_score REAL")
+                if columns and 'ai_rating' not in columns:
+                    cursor.execute("ALTER TABLE scanner_results ADD COLUMN ai_rating TEXT")
+                
+                conn.commit()
+                _INITIALIZED = True
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error during db connection/migration: {e}")
+            init_db()
+
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     conn.execute("PRAGMA foreign_keys=ON;")
     return conn
 
-
-_INIT_LOCK = threading.Lock()
-_INITIALIZED = False
-
-
 def init_db():
+    """Initialize the database schema."""
     global _INITIALIZED
-    if _INITIALIZED:
-        return
-    with _INIT_LOCK:
-        conn = get_conn()
-        cur = conn.cursor()
-        
-        # ===== CORE TABLES =====
-        
-        # Symbols table: managed externally (list of tracked symbols)
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS symbols (
-                symbol TEXT PRIMARY KEY,
-                exchange TEXT DEFAULT 'NSE',
-                symbol_type TEXT DEFAULT 'equity',  -- 'equity', 'fno', 'index'
-                is_active INTEGER DEFAULT 1,
-                last_updated INTEGER,
-                meta JSON
-            )
-            """
-        )
-
-        # Minute data: basic OHLCV per minute per symbol (EQUITY)
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS minute_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                ts INTEGER NOT NULL,
-                open REAL,
-                high REAL,
-                low REAL,
-                close REAL,
-                volume REAL,
-                UNIQUE(symbol, ts)
-            )
-            """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_minute_symbol_ts ON minute_data(symbol, ts)")
-        
-        # ===== F&O TABLES =====
-        
-        # F&O option chain data
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS fno_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT NOT NULL,
-                expiry_date TEXT NOT NULL,
-                strike_price REAL,
-                option_type TEXT,  -- 'CE', 'PE', 'FUT'
-                timestamp INTEGER NOT NULL,
-                open_interest INTEGER,
-                volume INTEGER,
-                ltp REAL,
-                bid REAL,
-                ask REAL,
-                iv REAL,  -- Implied Volatility
-                delta REAL,
-                gamma REAL,
-                theta REAL,
-                vega REAL,
-                UNIQUE(symbol, expiry_date, strike_price, option_type, timestamp)
-            )
-            """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_fno_symbol_expiry ON fno_data(symbol, expiry_date, timestamp)")
-        
-        # ===== INDICES TABLES =====
-        
-        # Index values (NIFTY, BANKNIFTY, etc.)
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS indices_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                index_name TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                value REAL NOT NULL,
-                open REAL,
-                high REAL,
-                low REAL,
-                close REAL,
-                change_pct REAL,
-                volume INTEGER,
-                UNIQUE(index_name, timestamp)
-            )
-            """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_indices_name_ts ON indices_data(index_name, timestamp)")
-        
-        # ===== SCANNER TABLES =====
-        
-        # Scanner configurations
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS scanners (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                url TEXT NOT NULL,
-                scanner_type TEXT NOT NULL,  -- 'equity', 'fno'
-                description TEXT,
-                is_active INTEGER DEFAULT 1,
-                created_at INTEGER NOT NULL,
-                last_run INTEGER
-            )
-            """
-        )
-        
-        # Scanner results
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS scanner_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                scanner_id INTEGER,
-                symbol TEXT NOT NULL,
-                timestamp INTEGER NOT NULL,
-                price REAL NOT NULL,
-                change_pct REAL NOT NULL,
-                volume INTEGER,
-                market_cap REAL,
-                sector TEXT,
-                alerted INTEGER DEFAULT 0,  -- Telegram alert sent flag
-                alert_sent_at INTEGER,
-                FOREIGN KEY(scanner_id) REFERENCES scanners(id) ON DELETE CASCADE
-            )
-            """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_results_ts ON scanner_results(timestamp)")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_scanner_results_symbol ON scanner_results(symbol, timestamp)")
-        
-        # ===== MONITORING & QUALITY TABLES =====
-        
-        # Data quality log
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS data_quality_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp INTEGER NOT NULL,
-                data_type TEXT NOT NULL,  -- 'equity', 'fno', 'indices'
-                total_symbols INTEGER,
-                successful INTEGER,
-                failed INTEGER,
-                error_details TEXT,
-                fetch_duration_sec REAL,
-                status TEXT DEFAULT 'success'  -- 'success', 'partial', 'failed'
-            )
-            """
-        )
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_quality_log_ts ON data_quality_log(timestamp)")
-        
-        # System health monitoring
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS system_health (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp INTEGER NOT NULL,
-                component TEXT NOT NULL,  -- 'fetcher', 'scanner', 'api', 'telegram'
-                status TEXT NOT NULL,  -- 'healthy', 'degraded', 'down'
-                latency_ms REAL,
-                error_count INTEGER DEFAULT 0,
-                message TEXT
-            )
-            """
-        )
-        
-        # ===== EOD REPORTS =====
-        
-        # End of day reports
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS eod_reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                report_date TEXT NOT NULL UNIQUE,  -- YYYY-MM-DD
-                timestamp INTEGER NOT NULL,
-                total_stocks INTEGER,
-                gainers INTEGER,
-                losers INTEGER,
-                unchanged INTEGER,
-                top_gainer TEXT,
-                top_gainer_pct REAL,
-                top_loser TEXT,
-                top_loser_pct REAL,
-                total_volume INTEGER,
-                market_sentiment TEXT,  -- 'bullish', 'bearish', 'neutral'
-                report_data JSON  -- Full report as JSON
-            )
-            """
-        )
-
-        conn.commit()
-        conn.close()
-        _INITIALIZED = True
-
-
-def insert_minute(symbol: str, ts: int, o: float, h: float, l: float, c: float, volume: float):
-    conn = get_conn()
-    try:
-        conn.execute(
-            "INSERT OR IGNORE INTO minute_data(symbol, ts, open, high, low, close, volume) VALUES(?,?,?,?,?,?,?)",
-            (symbol, ts, o, h, l, c, volume),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def bulk_insert(rows):
-    """rows: iterable of (symbol, ts, o,h,l,c,volume)"""
-    conn = get_conn()
-    try:
-        conn.executemany(
-            "INSERT OR IGNORE INTO minute_data(symbol, ts, open, high, low, close, volume) VALUES(?,?,?,?,?,?,?)",
-            rows,
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-# ===== SCANNER FUNCTIONS =====
-
-def insert_scanner(name: str, url: str, scanner_type: str, description: str = None):
-    """Add a new scanner configuration"""
-    conn = get_conn()
-    try:
-        import time
-        ts = int(time.time())
-        conn.execute(
-            "INSERT OR REPLACE INTO scanners(name, url, scanner_type, description, created_at) VALUES(?,?,?,?,?)",
-            (name, url, scanner_type, description, ts),
-        )
-        conn.commit()
-        return conn.execute("SELECT id FROM scanners WHERE name=?", (name,)).fetchone()[0]
-    finally:
-        conn.close()
-
-
-def insert_scanner_result(scanner_id: int, symbol: str, price: float, change_pct: float, 
-                         volume: int = None, market_cap: float = None, sector: str = None):
-    """Insert scanner result"""
-    conn = get_conn()
-    try:
-        import time
-        ts = int(time.time())
-        conn.execute(
-            """INSERT INTO scanner_results(scanner_id, symbol, timestamp, price, change_pct, volume, market_cap, sector)
-               VALUES(?,?,?,?,?,?,?,?)""",
-            (scanner_id, symbol, ts, price, change_pct, volume, market_cap, sector),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def mark_scanner_alerted(result_id: int):
-    """Mark scanner result as alerted"""
-    conn = get_conn()
-    try:
-        import time
-        ts = int(time.time())
-        conn.execute(
-            "UPDATE scanner_results SET alerted=1, alert_sent_at=? WHERE id=?",
-            (ts, result_id)
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-# ===== MONITORING FUNCTIONS =====
-
-def log_data_quality(data_type: str, total: int, successful: int, failed: int, 
-                     duration: float, status: str = 'success', errors: str = None):
-    """Log data quality metrics"""
-    conn = get_conn()
-    try:
-        import time
-        ts = int(time.time())
-        conn.execute(
-            """INSERT INTO data_quality_log(timestamp, data_type, total_symbols, successful, failed, 
-               fetch_duration_sec, status, error_details) VALUES(?,?,?,?,?,?,?,?)""",
-            (ts, data_type, total, successful, failed, duration, status, errors)
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def log_system_health(component: str, status: str, latency_ms: float = None, 
-                     error_count: int = 0, message: str = None):
-    """Log system health check"""
-    conn = get_conn()
-    try:
-        import time
-        ts = int(time.time())
-        conn.execute(
-            """INSERT INTO system_health(timestamp, component, status, latency_ms, error_count, message)
-               VALUES(?,?,?,?,?,?)""",
-            (ts, component, status, latency_ms, error_count, message)
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-# ===== QUERY FUNCTIONS =====
-
-def get_latest_price(symbol: str):
-    """Get latest price for a symbol"""
-    conn = get_conn()
-    try:
-        result = conn.execute(
-            "SELECT close, ts FROM minute_data WHERE symbol=? ORDER BY ts DESC LIMIT 1",
-            (symbol,)
-        ).fetchone()
-        return result if result else None
-    finally:
-        conn.close()
-
-
-def get_historical_data(symbol: str, start_ts: int, end_ts: int):
-    """Get historical OHLCV data for a symbol"""
-    conn = get_conn()
-    try:
-        import pandas as pd
-        query = """
-            SELECT ts, open, high, low, close, volume 
-            FROM minute_data 
-            WHERE symbol=? AND ts BETWEEN ? AND ?
-            ORDER BY ts ASC
-        """
-        df = pd.read_sql_query(query, conn, params=(symbol, start_ts, end_ts))
-        return df
-    finally:
-        conn.close()
-
-
-def get_historical_data(symbol: str, days: int = 30):
-    """
-    Get historical OHLCV data for a symbol
+    logger.info(f"Initializing database at {DB_PATH}")
     
-    Args:
-        symbol: Stock symbol
-        days: Number of days of history to fetch
-        
-    Returns:
-        List of dicts with timestamp, open, high, low, close, volume
-    """
-    import pandas as pd
-    from datetime import datetime, timedelta
+    conn = sqlite3.connect(str(DB_PATH))
+    cursor = conn.cursor()
     
+    # STOCKS Table (Base universe)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS stocks (
+        symbol TEXT PRIMARY KEY,
+        company_name TEXT,
+        industry TEXT,
+        isin TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
+    # SYMBOLS Table (Dashboard mapping)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS symbols (
+        symbol TEXT PRIMARY KEY,
+        symbol_type TEXT DEFAULT 'equity',
+        is_active INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    
+    # SCANNERS Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS scanners (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        url TEXT,
+        scanner_type TEXT,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    
+    # SCANNER RESULTS Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS scanner_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scanner_id INTEGER,
+        symbol TEXT,
+        price REAL,
+        change_pct REAL,
+        volume INTEGER,
+        sector TEXT,
+        ai_score REAL,
+        ai_rating TEXT,
+        patterns TEXT,
+        alerted INTEGER DEFAULT 0,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (scanner_id) REFERENCES scanners (id)
+    );
+    """)
+    
+    # SYSTEM HEALTH Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS system_health (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        component TEXT,
+        status TEXT,
+        message TEXT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    
+    conn.commit()
+    conn.close()
+    _INITIALIZED = True
+    logger.info("Database initialized successfully.")
+
+def insert_scanner(name, url, scanner_type="chartink", description=""):
+    """Insert or get scanner ID."""
     conn = get_conn()
+    cursor = conn.cursor()
     try:
-        end_ts = int(datetime.now().timestamp())
-        start_ts = int((datetime.now() - timedelta(days=days)).timestamp())
+        cursor.execute("""
+        INSERT OR IGNORE INTO scanners (name, url, scanner_type, description)
+        VALUES (?, ?, ?, ?)
+        """, (name, url, scanner_type, description))
+        conn.commit()
         
-        query = """
-            SELECT ts as timestamp, open, high, low, close, volume 
-            FROM minute_data 
-            WHERE symbol=? AND ts BETWEEN ? AND ?
-            ORDER BY ts ASC
-        """
-        cursor = conn.execute(query, (symbol, start_ts, end_ts))
-        rows = cursor.fetchall()
-        
-        # Convert to list of dicts
-        if rows:
-            return [
-                {
-                    'timestamp': row[0],
-                    'open': row[1],
-                    'high': row[2],
-                    'low': row[3],
-                    'close': row[4],
-                    'volume': row[5]
-                }
-                for row in rows
-            ]
+        cursor.execute("SELECT id FROM scanners WHERE name = ?", (name,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+    except Exception as e:
+        logger.error(f"Error inserting scanner {name}: {e}")
+        return None
+    finally:
+        conn.close()
+
+def insert_scanner_result(scanner_id, symbol, price, change_pct, volume, sector="", timestamp=None, ai_score=None, ai_rating=None):
+    """Insert a scanner result."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        if timestamp is None:
+            timestamp = int(time.time())
+            
+        cursor.execute("""
+        INSERT INTO scanner_results (scanner_id, symbol, price, change_pct, volume, sector, timestamp, ai_score, ai_rating, patterns)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (scanner_id, symbol, price, change_pct, volume, sector, timestamp, ai_score, ai_rating, ""))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error inserting result for {symbol}: {e}")
+    finally:
+        conn.close()
+
+def update_scanner_result_ai(symbol, timestamp, ai_score, ai_rating, patterns=""):
+    """Update a scanner result with AI analysis info."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        UPDATE scanner_results 
+        SET ai_score = ?, ai_rating = ?, patterns = ?
+        WHERE symbol = ? AND timestamp = ?
+        """, (ai_score, ai_rating, patterns, symbol, timestamp))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error updating AI result for {symbol}: {e}")
+    finally:
+        conn.close()
+
+def log_health(component, status, message):
+    """Log system health status."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        INSERT INTO system_health (component, status, message)
+        VALUES (?, ?, ?)
+        """, (component, status, message))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error logging health: {e}")
+    finally:
+        conn.close()
+
+def get_latest_results(scanner_name, limit=50):
+    """Get latest results for a scanner."""
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        SELECT r.* 
+        FROM scanner_results r
+        JOIN scanners s ON r.scanner_id = s.id
+        WHERE s.name = ?
+        ORDER BY r.timestamp DESC
+        LIMIT ?
+        """, (scanner_name, limit))
+        rows = [dict(row) for row in cursor.fetchall()]
+        return rows
+    except Exception as e:
+        logger.error(f"Error fetching results: {e}")
         return []
     finally:
         conn.close()
 
-
-def get_scanner_results(scanner_id: int = None, limit: int = 100, only_unalerted: bool = False):
-    """Get scanner results"""
+def get_auto_stock_findings(limit=10):
+    """Get top 10 stocks with high AI scores across all scanners."""
     conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
     try:
-        query = """
-            SELECT sr.*, s.name as scanner_name 
-            FROM scanner_results sr
-            LEFT JOIN scanners s ON sr.scanner_id = s.id
-            WHERE 1=1
-        """
-        params = []
+        # 1. Try to get AI-scored results (Score > 7) from last 24h
+        yesterday = int(time.time()) - (24 * 3600)
+        cursor.execute("""
+        SELECT r.*, s.name as scanner_name
+        FROM scanner_results r
+        JOIN scanners s ON r.scanner_id = s.id
+        WHERE r.timestamp > ? AND r.ai_score >= 7.0
+        ORDER BY r.ai_score DESC, r.timestamp DESC
+        LIMIT ?
+        """, (yesterday, limit))
+        rows = [dict(row) for row in cursor.fetchall()]
         
-        if scanner_id:
-            query += " AND sr.scanner_id=?"
-            params.append(scanner_id)
+        # 2. Fallback: If no AI results, get latest highly technical setups (manual filter equivalent)
+        if not rows:
+            cursor.execute("""
+            SELECT r.*, s.name as scanner_name
+            FROM scanner_results r
+            JOIN scanners s ON r.scanner_id = s.id
+            WHERE r.timestamp > ?
+            ORDER BY r.timestamp DESC
+            LIMIT ?
+            """, (yesterday, limit))
+            rows = [dict(row) for row in cursor.fetchall()]
+            # Add dummy score for technical-only
+            for r in rows:
+                if r.get('ai_score') is None:
+                    r['ai_score'] = "Tech"
+                    r['ai_rating'] = "Strong Setup"
         
-        if only_unalerted:
-            query += " AND alerted=0"
-        
-        query += " ORDER BY timestamp DESC LIMIT ?"
-        params.append(limit)
-        
-        import pandas as pd
-        df = pd.read_sql_query(query, conn, params=params)
-        return df
+        return rows
+    except Exception as e:
+        logger.error(f"Error fetching auto findings: {e}")
+        return []
     finally:
         conn.close()
 
+def get_scanner_results(limit=50):
+    """Get latest results as a DataFrame."""
+    try:
+        conn = get_conn()
+        query = """
+        SELECT r.symbol, r.price, r.change_pct, r.volume, r.ai_score, r.ai_rating, r.patterns, s.name as scanner_name, r.timestamp
+        FROM scanner_results r
+        JOIN scanners s ON r.scanner_id = s.id
+        ORDER BY r.timestamp DESC
+        LIMIT ?
+        """
+        df = pd.read_sql_query(query, conn, params=(limit,))
+        conn.close()
+        return df
+    except Exception as e:
+        logger.error(f"Error getting scanner results: {e}")
+        return pd.DataFrame()
+
+def get_historical_data(symbol, days=30):
+    """Get historical prices for pattern detection."""
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        SELECT price as close, timestamp
+        FROM scanner_results
+        WHERE symbol = ?
+        ORDER BY timestamp DESC
+        LIMIT ?
+        """, (symbol, days))
+        rows = [dict(row) for row in cursor.fetchall()]
+        return rows
+    except Exception as e:
+        logger.error(f"Error fetching historical data: {e}")
+        return []
+    finally:
+        conn.close()
+
+def mark_scanner_alerted(symbol, timestamp):
+    """Mark a result as alerted."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        UPDATE scanner_results SET alerted = 1 
+        WHERE symbol = ? AND timestamp = ?
+        """, (symbol, timestamp))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error marking alerted: {e}")
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     init_db()
-    print(f"Initialized DB at {DB_PATH}")

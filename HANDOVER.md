@@ -5,7 +5,8 @@ Your professional stock terminal is **production-ready**. Below are the final st
 
 ## 📁 System Overview
 - **Core Engine**: `app.py` (Real-time SocketIO Server)
-- **Scanning Logic**: `scanner.py` (7 Criteria Swing Pick + FNO Autopick)
+- **Scanning Logic**: `scanner.py` (VCP Breakout Watch, Swing Pick, FNO Autopick)
+- **Special Tab**: "Breakout Watch" for Minervini-style Volatility Contraction Patterns.
 - **Database**: `database.py` (Persistence with Render disk support)
 - **Visuals**: Modern Dark Theme (Bootstrap 5 + Custom CSS)
 

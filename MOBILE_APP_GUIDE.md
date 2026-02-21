@@ -14,17 +14,23 @@ Since we just added the **App Icons** and **Mobile Features**, you need to updat
 
 ## 📲 Step 2: Install on iPhone (iOS)
 
-1. Open **Safari** (must be Safari)
-2. Go to your app URL: `https://trade-with-nilay.streamlit.app`
-3. Tap the **Share Details** button (square with arrow up) at bottom center
-4. Scroll down and tap **"Add to Home Screen"**
-5. You'll see the "TN" logo!
-6. Tap **Add**
+1. **First, find your real URL:**
+   - Go to https://share.streamlit.io on your laptop
+   - Click on your app "Trade_with_Nilay_Pro"
+   - **Copy that unique URL** (it might look like `trade-with-nilay-pro.streamlit.app`)
+   - Send that URL to your phone (WhatsApp/Email)
+
+2. Open **Safari** on iPhone
+3. Go to YOUR unique app URL
+4. Tap the **Share Details** button (square with arrow up) at bottom center
+5. Scroll down and tap **"Add to Home Screen"**
+6. You'll see the "TN" logo!
+7. Tap **Add**
 
 ## 📲 Step 3: Install on Android
 
 1. Open **Chrome**
-2. Go to your app URL: `https://trade-with-nilay.streamlit.app`
+2. Go to YOUR unique app URL (from Step 2)
 3. Tap the **Three Dots (⋮)** menu at top right
 4. Tap **"Add to Home Screen"** (or "Install App")
 5. Tap **Add** automatically
@@ -40,5 +46,13 @@ Now verify it works:
 
 ---
 
-**Need Help?**
-If the icon doesn't appear immediately, clear your browser cache or wait 5 minutes for the update to propagate.
+## 🔑 DEPLOYMENT SECRETS
+
+When deploying on Streamlit Cloud, click **"Advanced settings"** and paste this into the **Secrets** box:
+
+```toml
+TELEGRAM_BOT_TOKEN = "8289967600:AAFSLnB1eCSYpKOdIenz398AcdJ5utcNyIs"
+TELEGRAM_CHAT_ID = "810052560"
+```
+
+This will enable your Telegram alerts!
