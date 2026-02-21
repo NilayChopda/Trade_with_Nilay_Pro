@@ -1,0 +1,22 @@
+
+services:
+  - type: web
+    name: trade-with-nilay
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class eventlet -w 1 app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: KITE_API_KEY
+        value: 927xjtvndq82vjc3
+      - key: DATABASE_URL
+        value: trade_with_nilay_prod.db
+      - key: TELEGRAM_BOT_TOKEN
+        value: 8289967600:AAFSLnB1eCSYpKOdIenz398AcdJ5utcNyIs
+      - key: TELEGRAM_CHAT_ID
+        value: 810052560
+    disk:
+      name: trade-data
+      mountPath: /data
+      sizeGB: 1

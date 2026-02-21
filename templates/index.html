@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="dashboard-tab" class="tab-content">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h2 class="fw-bold"><i class="bi bi-speedometer2 me-2 text-primary"></i>Live Scanner Dashboard</h2>
+            <div class="text-secondary small">
+                Auto-refreshes every 5 mins <i class="bi bi-arrow-repeat ms-1 text-info mt-1"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Summary -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card bg-black border-secondary">
+                <div class="card-body">
+                    <h6 class="text-secondary mb-1">0% to +3% Stocks</h6>
+                    <h3 class="fw-bold mb-0" id="total-results">{{ stocks|length }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-black border-secondary">
+                <div class="card-body">
+                    <h6 class="text-secondary mb-1">Last Update</h6>
+                    <h3 class="fw-bold mb-0 h5 mt-2" id="last-update-time">Just Now</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Data Table -->
+    <div class="card bg-black border-secondary">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0 align-middle">
+                <thead class="bg-dark text-secondary">
+                    <tr>
+                        <th class="ps-4">SYMBOL</th>
+                        <th>PRICE</th>
+                        <th>%CHANGE</th>
+                        <th>VOLUME</th>
+                        <th>TIME</th>
+                        <th class="text-end pe-4">ACTION</th>
+                    </tr>
+                </thead>
+                <tbody id="dashboard-body">
+                    {% for stock in stocks %}
+                    <tr>
+                        <td class="ps-4">
+                            <div class="fw-bold text-light">{{ stock.symbol }}</div>
+                            <div class="text-secondary x-small">NSE Equity</div>
+                        </td>
+                        <td>₹{{ "{:,.2f}".format(stock.price) }}</td>
+                        <td>
+                            <span class="badge {{ 'bg-success' if stock.change_pct > 0 else 'bg-danger' }}">
+                                {{ "%+.2f"|format(stock.change_pct) }}%
+                            </span>
+                        </td>
+                        <td class="text-secondary small">{{ "{:,.0f}".format(stock.volume) }}</td>
+                        <td class="text-secondary small">{{ stock.update_time or 'Live' }}</td>
+                        <td class="text-end pe-4">
+                            <button class="btn btn-outline-primary btn-sm" onclick="showAIReport('{{ stock.symbol }}')">
+                                <i class="bi bi-cpu"></i> AI Report
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-secondary">
+                            No stocks currently in the 0-3% range. Scanning in 5 mins...
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- VCP Breakout Watch Tab -->
+<div id="vcp-tab" class="tab-content d-none">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <div>
+                <h2 class="fw-bold mb-1"><i class="bi bi-fire text-danger me-2"></i>Breakout Watch (VCP)</h2>
+                <p class="text-secondary small mb-0">Minervini Style Strategy: Consolidation -> Tightness -> Explosive
+                    Move</p>
+            </div>
+            <button class="btn btn-danger px-4 py-2 fw-bold shadow-sm" onclick="loadScanner('vcp')">
+                <i class="bi bi-lightning-fill me-1"></i> SCAN VCP
+            </button>
+        </div>
+    </div>
+
+    <div class="card bg-black border-secondary">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead class="bg-dark text-secondary">
+                    <tr>
+                        <th class="ps-4">SYMBOL</th>
+                        <th>PRICE</th>
+                        <th>%CHANGE</th>
+                        <th>VCP STATUS</th>
+                        <th>TECHS</th>
+                        <th class="text-end pe-4">ACTION</th>
+                    </tr>
+                </thead>
+                <tbody id="vcp-scanner-body">
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-secondary">Ready to identify High-Probability VCP
+                            Setups.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Strategy Key -->
+    <div class="row mt-4">
+        <div class="col-md-4">
+            <div class="p-3 bg-dark rounded border border-secondary h-100">
+                <h6 class="text-primary fw-bold small uppercase mb-2">🔥 Trend Filter</h6>
+                <p class="text-secondary x-small mb-0">Price > 50 EMA > 200 EMA + RSI > 55. We only trade winners.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-dark rounded border border-secondary h-100">
+                <h6 class="text-primary fw-bold small uppercase mb-2">📈 Tightness Filter</h6>
+                <p class="text-secondary x-small mb-0">15-day range < 12%. Volatility contraction indicates supply
+                        absorption.</p>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="p-3 bg-dark rounded border border-secondary h-100">
+                <h6 class="text-primary fw-bold small uppercase mb-2">📉 Volume Dry-up</h6>
+                <p class="text-secondary x-small mb-0">Volume contracting as price compresses. Ready to explode on next
+                    demand spike.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart Scanner Tab -->
+<div id="swing-tab" class="tab-content d-none">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between">
+            <h2 class="fw-bold">Nilay Swing Pick Algo</h2>
+            <button class="btn btn-primary" onclick="loadScanner('swing')">Run Scan Now</button>
+        </div>
+    </div>
+    <div class="card bg-black border-secondary">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-4">SYMBOL</th>
+                        <th>PRICE</th>
+                        <th>%CHANGE</th>
+                        <th>VOLUME</th>
+                        <th class="text-end pe-4">ACTION</th>
+                    </tr>
+                </thead>
+                <tbody id="swing-scanner-body">
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-secondary">Click 'Run Scan Now' to start scanning.
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- FNO Scanner Tab -->
+<div id="fno-tab" class="tab-content d-none">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between">
+            <h2 class="fw-bold">Nilay FNO Autopick</h2>
+            <button class="btn btn-primary" onclick="loadScanner('fno')">Run FNO Scan</button>
+        </div>
+    </div>
+    <div class="card bg-black border-secondary">
+        <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th class="ps-4">SYMBOL</th>
+                        <th>PRICE</th>
+                        <th>%CHANGE</th>
+                        <th>VOLUME</th>
+                        <th class="text-end pe-4">ACTION</th>
+                    </tr>
+                </thead>
+                <tbody id="fno-scanner-body">
+                    <tr>
+                        <td colspan="5" class="text-center py-5 text-secondary">Ready for FNO Autopick.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Announcements Tab -->
+<div id="announcements-tab" class="tab-content d-none">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2 class="fw-bold">Corporate Announcements</h2>
+        </div>
+        <div class="col-md-4">
+            <div class="input-group">
+                <span class="input-group-text bg-black border-secondary text-secondary"><i
+                        class="bi bi-search"></i></span>
+                <input type="text" id="ann-search" class="form-control bg-dark text-light border-secondary shadow-none"
+                    placeholder="Search Company..." onkeyup="filterAnnouncements()">
+            </div>
+        </div>
+    </div>
+    <div id="announcements-list" class="row g-3">
+        <!-- Announcements Load Here -->
+    </div>
+</div>
+
+<!-- EOD History Tab -->
+<div id="eod-tab" class="tab-content d-none">
+    <h2 class="fw-bold mb-4">Market End-of-Day History</h2>
+    <div id="eod-container">
+        <!-- History Cards Load Here -->
+    </div>
+</div>
+
+<!-- AI Report Modal -->
+<div class="modal fade" id="aiModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title fw-bold" id="aiModalLabel">AI Analysis Report</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="ai-report-content">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-secondary">Analyzing fundamentals & chart patterns...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
