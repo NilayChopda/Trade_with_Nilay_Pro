@@ -12,6 +12,8 @@ from eod_reports import get_eod_history, EODReportGenerator
 from datetime import datetime
 import pytz
 import threading
+import json
+from backtester_v3 import OneYearBacktest
 
 # Initialize App
 app = Flask(__name__)
@@ -124,6 +126,22 @@ def handle_connect():
 @app.route('/api/scan-status')
 def scan_status():
     return jsonify({"is_scanning": scanner.is_scanning})
+
+@app.route('/api/backtest-history')
+def backtest_history():
+    """Fetches the latest backtest results."""
+    with get_db() as conn:
+        cursor = conn.execute("SELECT * FROM backtest_results ORDER BY created_at DESC LIMIT 5")
+        results = [dict(row) for row in cursor.fetchall()]
+        return jsonify(results)
+
+@app.route('/api/run-backtest')
+def run_backtest():
+    """Manually triggers a 1-year backtest."""
+    bt = OneYearBacktest()
+    # Run in background to avoid timeout
+    threading.Thread(target=bt.run, daemon=True).start()
+    return jsonify({"status": "started", "message": "1-Year Backtest running in background..."})
 
 if __name__ == '__main__':
     # For local testing, use socketio.run

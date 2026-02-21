@@ -58,52 +58,62 @@ class MarketScanner:
             'Volume': 'sum'
         }).dropna()
         return resampled
+    def check_swing_criteria(self, symbol, override_df=None):
+        """Logic for NILAY SWING PICK - ALGO (Support backtest override)."""
+        try:
+            if override_df is not None:
+                df_daily = override_df
+            else:
+                df_daily = self.data_provider.get_historical_data(symbol, period="1y")
+            
+            if len(df_daily) < 100: return None
+            
+            df_weekly = self.resample_data(df_daily, 'W')
+            df_monthly = self.resample_data(df_daily, 'M')
 
-    def check_swing_criteria(self, symbol):
-        """Logic for Nilay Swing Pick Algo (7 Criteria)."""
-        df_daily = self.data_provider.get_historical_data(symbol, period="2y")
-        if len(df_daily) < 100:
+            wma1_d = calculate_wma(df_daily, 1).iloc[-1]
+            wma2_m = calculate_wma(df_monthly, 2).iloc[-1]
+            wma4_m = calculate_wma(df_monthly, 4).iloc[-1]
+            wma6_w = calculate_wma(df_weekly, 6).iloc[-1]
+            wma12_w = calculate_wma(df_weekly, 12).iloc[-1]
+            wma12_d_4ago = calculate_wma(df_daily, 12).iloc[-5] if len(df_daily) > 12 else 0
+            wma20_d_2ago = calculate_wma(df_daily, 20).iloc[-3] if len(df_daily) > 20 else 0
+            close = df_daily['Close'].iloc[-1]
+
+            # 7 Criteria
+            c1 = wma1_d > (wma2_m + 1)
+            c2 = wma2_m > (wma4_m + 2)
+            c3 = wma1_d > (wma6_w + 2)
+            c4 = wma6_w > (wma12_w + 2)
+            c5 = wma1_d > (wma12_d_4ago + 2)
+            c6 = wma1_d > (wma20_d_2ago + 2)
+            c7 = close > 20
+
+            if all([c1, c2, c3, c4, c5, c6, c7]):
+                tech = get_technical_summary(df_daily)
+                return {
+                    "symbol": symbol,
+                    "price": round(close, 2),
+                    "change_pct": round(((close - df_daily['Close'].iloc[-2])/df_daily['Close'].iloc[-2])*100, 2),
+                    "volume": int(df_daily['Volume'].iloc[-1]),
+                    "patterns": ", ".join(tech['patterns']),
+                    "indicators": ", ".join(tech['signals']),
+                    "scan_type": "swing"
+                }
+        except Exception as e:
+            logger.error(f"Swing check failed for {symbol}: {e}")
             return None
-        
-        df_weekly = self.resample_data(df_daily, 'W')
-        df_monthly = self.resample_data(df_daily, 'M')
-
-        # WMA Calculations
-        wma1_d = calculate_wma(df_daily, 1).iloc[-1]
-        wma2_m = calculate_wma(df_monthly, 2).iloc[-1]
-        wma4_m = calculate_wma(df_monthly, 4).iloc[-1]
-        wma6_w = calculate_wma(df_weekly, 6).iloc[-1]
-        wma12_w = calculate_wma(df_weekly, 12).iloc[-1]
-        wma12_d_4ago = calculate_wma(df_daily, 12).iloc[-5] if len(df_daily) > 12 else 0
-        wma20_d_2ago = calculate_wma(df_daily, 20).iloc[-3] if len(df_daily) > 20 else 0
-        close = df_daily['Close'].iloc[-1]
-
-        # 7 Criteria
-        c1 = wma1_d > (wma2_m + 1)
-        c2 = wma2_m > (wma4_m + 2)
-        c3 = wma1_d > (wma6_w + 2)
-        c4 = wma6_w > (wma12_w + 2)
-        c5 = wma1_d > (wma12_d_4ago + 2)
-        c6 = wma1_d > (wma20_d_2ago + 2)
-        c7 = close > 20
-
-        if all([c1, c2, c3, c4, c5, c6, c7]):
-            tech = get_technical_summary(df_daily)
-            return {
-                "symbol": symbol,
-                "price": round(close, 2),
-                "change_pct": round(((close - df_daily['Close'].iloc[-2])/df_daily['Close'].iloc[-2])*100, 2),
-                "volume": int(df_daily['Volume'].iloc[-1]),
-                "patterns": ", ".join(tech['patterns']),
-                "indicators": ", ".join(tech['signals']),
-                "scan_type": "swing"
-            }
+        return None
         return None
 
-    def check_vcp_criteria(self, symbol):
+    def check_vcp_criteria(self, symbol, override_df=None):
         """Logic for Special VCP / Breakout Watch Scanner."""
         try:
-            df = self.data_provider.get_historical_data(symbol, period="1y")
+            if override_df is not None:
+                df = override_df
+            else:
+                df = self.data_provider.get_historical_data(symbol, period="1y")
+            
             if len(df) < 150: return None
             
             # Use PatternDetector for robust VCP detection
@@ -132,10 +142,14 @@ class MarketScanner:
             return None
         return None
 
-    def check_smc_criteria(self, symbol):
+    def check_smc_criteria(self, symbol, override_df=None):
         """Logic for Smart Money Concepts (SMC) Demand Zones."""
         try:
-            df = self.data_provider.get_historical_data(symbol, period="6mo")
+            if override_df is not None:
+                df = override_df
+            else:
+                df = self.data_provider.get_historical_data(symbol, period="6mo")
+            
             if len(df) < 50: return None
             
             df.columns = [c.lower() for c in df.columns]

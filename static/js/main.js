@@ -16,7 +16,9 @@ function showTab(tabName) {
     if (tabName === 'eod') loadEODHistory();
 }
 
-// Socket NIO Events
+// Socket.IO Connection
+let lastRecommendation = null;
+
 socket.on('connect', () => {
     console.log('Connected to Trade with Nilay Terminal');
     document.getElementById('market-status').innerHTML = '<i class="bi bi-circle-fill small me-1"></i> LIVE';
@@ -25,7 +27,17 @@ socket.on('connect', () => {
 
 socket.on('market_update', (data) => {
     console.log('Market Update Received:', data);
-    updateDashboardTable(data.stocks);
+    const stocks = data.stocks || [];
+    if (stocks.length > 0) {
+        updateDashboardTable(stocks);
+
+        // Instant Pick Logic: Strongest stock first
+        const strongest = stocks.reduce((prev, current) => (prev.change_pct > current.change_pct) ? prev : current);
+        if (strongest && strongest.symbol !== lastRecommendation && strongest.change_pct > 2.0) {
+            lastRecommendation = strongest.symbol;
+            showInstantPopup(strongest);
+        }
+    }
     document.getElementById('last-update-time').innerText = new Date().toLocaleTimeString();
 });
 
@@ -251,9 +263,33 @@ window.addEventListener('load', () => {
         if (isDashboardVisible) {
             fetch('/api/dashboard')
                 .then(res => res.json())
-                .then(data => updateDashboardTable(data));
+                .then(data => {
+                    const stocks = data;
+                    if (stocks.length > 0) {
+                        updateDashboardTable(stocks);
+
+                        // Check for instant popup (Strongest stock first)
+                        const strongest = stocks.reduce((prev, current) => (prev.change_pct > current.change_pct) ? prev : current);
+                        if (strongest && strongest.symbol !== lastRecommendation && strongest.change_pct > 2.0) {
+                            lastRecommendation = strongest.symbol;
+                            showInstantPopup(strongest);
+                        }
+                    }
+                });
         }
     }, 30000); // Faster update (30s)
+
+    function showInstantPopup(stock) {
+        document.getElementById('rec-symbol').innerText = stock.symbol;
+        document.getElementById('rec-reason').innerText = `Strong Signal: ${stock.patterns || 'Swing Pick'} | ${stock.change_pct}%`;
+        const modal = new bootstrap.Modal(document.getElementById('recommendModal'));
+        modal.show();
+    }
+
+    function launchRecReport() {
+        const symbol = document.getElementById('rec-symbol').innerText;
+        showAIReport(symbol);
+    }
 
     // Check Scan Status
     setInterval(() => {

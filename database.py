@@ -99,6 +99,20 @@ def init_db():
             )
         """)
         
+        # 7. Backtest Results
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS backtest_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                strategy TEXT NOT NULL,
+                total_signals INTEGER,
+                accuracy REAL,
+                avg_return REAL,
+                period TEXT,
+                results_json TEXT, -- detailed JSON of signals
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
         # 6. Dashboard Cache (Top results within 0-3%)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_cache (
