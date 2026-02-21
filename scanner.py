@@ -245,7 +245,29 @@ class MarketScanner:
             self.is_scanning = False
 
         # Save to DB and Update Cache
-        return results
+        try:
+            with get_db() as conn:
+                # Clear old cache for dashboard (0-3% range)
+                dashboard_results = [r for r in results if 0 <= r.get('change_pct', 0) <= 3.0]
+                save_dashboard_cache(dashboard_results)
+                
+                for r in results:
+                    conn.execute("""
+                        INSERT INTO scanner_results (symbol, price, change_pct, volume, scan_type, patterns, indicators)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (r['symbol'], r['price'], r['change_pct'], r.get('volume', 0), r['scan_type'], r['patterns'], r['indicators']))
+                    
+                    # Telegram Alerts Logic
+                    if 0 <= r.get('change_pct', 0) <= 3.0:
+                        if not is_already_alerted(r['symbol']):
+                            alert_msg = f"🚀 *{r['symbol']}* ({r['change_pct']:+.2f}%)\nPrice: ₹{r['price']}\nPatterns: {r['patterns']}\nType: {r['scan_type'].upper()}"
+                            if send_telegram_alert(alert_msg):
+                                log_alert(r['symbol'], r['price'], r['change_pct'], r['scan_type'], alert_msg)
+            
+            return dashboard_results
+        except Exception as e:
+            logger.error(f"Database update failed: {e}")
+            return []
 
 if __name__ == "__main__":
     scanner = MarketScanner()
