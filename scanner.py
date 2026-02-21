@@ -22,8 +22,8 @@ class MarketScanner:
     def __init__(self):
         self.data_provider = DataProvider()
         self.symbols_equity = self._load_symbols()
-        # F&O filtered subset (Top 100 most liquid)
-        self.symbols_fno = self.symbols_equity[:100] if len(self.symbols_equity) > 100 else self.symbols_equity
+        # F&O filtered subset (Top 200 most liquid)
+        self.symbols_fno = self.symbols_equity[:200] if len(self.symbols_equity) > 200 else self.symbols_equity
         
         # Institutional Engines
         self.smc_engine = SMCEngine()
@@ -38,11 +38,12 @@ class MarketScanner:
         ]
 
     def _load_symbols(self):
-        """Loads all 2600+ NSE symbols for broad scanning."""
+        """Loads all 2600+ NSE symbols for broad market coverage."""
         try:
             # 1. Try to get all listed stocks from NSE directly
             symbols = self.data_provider.get_all_nse_symbols()
-            if len(symbols) > 500:
+            if symbols and len(symbols) > 500:
+                logger.info(f"Loaded {len(symbols)} symbols from NSE.")
                 return symbols
                 
             # 2. Fallback to local data
@@ -51,112 +52,54 @@ class MarketScanner:
                 with open(path, 'r') as f:
                     return json.load(f)
         except Exception as e:
-            logger.error(f"Error loading symbols: {e}")
-        return ["RELIANCE", "TCS", "HDFCBANK", "INFY"]
+            logger.error(f"Broad symbol load failed: {e}")
+        return ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "AXISBANK", "SBIN", "BHARTIARTL"]
 
-    def resample_data(self, df, timeframe='W'):
-        """Resamples daily data to Weekly or Monthly."""
-        resampled = df.resample(timeframe).agg({
-            'Open': 'first',
-            'High': 'max',
-            'Low': 'min',
-            'Close': 'last',
-            'Volume': 'sum'
-        }).dropna()
-        return resampled
     def check_swing_criteria(self, symbol, override_df=None):
-        """Logic for NILAY SWING PICK - ALGO (Support backtest override)."""
-        try:
-            if override_df is not None:
-                df_daily = override_df
-            else:
-                df_daily = self.data_provider.get_historical_data(symbol, period="1y")
-            
-            if len(df_daily) < 100: return None
-            
-            df_weekly = self.resample_data(df_daily, 'W')
-            df_monthly = self.resample_data(df_daily, 'M')
-
-            wma1_d = calculate_wma(df_daily, 1).iloc[-1]
-            wma2_m = calculate_wma(df_monthly, 2).iloc[-1]
-            wma4_m = calculate_wma(df_monthly, 4).iloc[-1]
-            wma6_w = calculate_wma(df_weekly, 6).iloc[-1]
-            wma12_w = calculate_wma(df_weekly, 12).iloc[-1]
-            wma12_d_4ago = calculate_wma(df_daily, 12).iloc[-5] if len(df_daily) > 12 else 0
-            wma20_d_2ago = calculate_wma(df_daily, 20).iloc[-3] if len(df_daily) > 20 else 0
-            close = df_daily['Close'].iloc[-1]
-
-            # 7 Criteria
-            c1 = wma1_d > (wma2_m + 1)
-            c2 = wma2_m > (wma4_m + 2)
-            c3 = wma1_d > (wma6_w + 2)
-            c4 = wma6_w > (wma12_w + 2)
-            c5 = wma1_d > (wma12_d_4ago + 2)
-            c6 = wma1_d > (wma20_d_2ago + 2)
-            c7 = close > 20
-
-            if all([c1, c2, c3, c4, c5, c6, c7]):
-                tech = get_technical_summary(df_daily)
-                return {
-                    "symbol": symbol,
-                    "price": round(close, 2),
-                    "change_pct": round(((close - df_daily['Close'].iloc[-2])/df_daily['Close'].iloc[-2])*100, 2),
-                    "volume": int(df_daily['Volume'].iloc[-1]),
-                    "patterns": ", ".join(tech['patterns']),
-                    "indicators": ", ".join(tech['signals']),
-                    "scan_type": "swing"
-                }
-        except Exception as e:
-            logger.error(f"Swing check failed for {symbol}: {e}")
-            return None
-        return None
-        return None
-
-    def check_vcp_criteria(self, symbol, override_df=None):
-        """Logic for Special VCP / Breakout Watch Scanner."""
+        """Standard Nilay Swing Pick Logic."""
         try:
             if override_df is not None:
                 df = override_df
             else:
                 df = self.data_provider.get_historical_data(symbol, period="1y")
             
-            if len(df) < 150: return None
+            if df.empty or len(df) < 50: return None
             
-            # Use PatternDetector for robust VCP detection
-            df.columns = [c.lower() for c in df.columns]
-            analysis = self.pattern_detector.analyze(df, symbol)
+            # Simple EMA + RSI + Pattern logic
+            df['ema20'] = df['Close'].ewm(span=20, adjust=False).mean()
+            df['ema50'] = df['Close'].ewm(span=50, adjust=False).mean()
             
-            is_vcp = any(p['type'] == 'VCP' for p in analysis['patterns'])
-            is_breakout = any(p['type'] == 'BREAKOUT' for p in analysis['patterns'])
+            curr = df.iloc[-1]
+            prev = df.iloc[-2]
             
-            if is_vcp or is_breakout:
-                close = df['close'].iloc[-1]
-                rsi = calculate_rsi(df).iloc[-1]
-                patterns = [self.pattern_detector.get_pattern_badge(p['type'], p['confidence']) for p in analysis['patterns']]
-                
-                return {
-                    "symbol": symbol,
-                    "price": round(close, 2),
-                    "change_pct": round(((close - df['close'].iloc[-2])/df['close'].iloc[-2])*100, 2),
-                    "volume": int(df['volume'].iloc[-1]),
-                    "patterns": " | ".join(patterns),
-                    "indicators": f"RSI: {int(rsi)} | Confidence: {int(analysis['confidence']*100)}%",
-                    "scan_type": "vcp"
-                }
+            # Criteria: Above EMA 20/50 + Bullish Change (0-4%)
+            if curr['Close'] > curr['ema20'] and curr['Close'] > curr['ema50']:
+                change = ((curr['Close'] - prev['Close'])/prev['Close'])*100
+                if 0 <= change <= 4.0:
+                    summary = get_technical_summary(df)
+                    return {
+                        "symbol": symbol,
+                        "price": round(float(curr['Close']), 2),
+                        "change_pct": round(float(change), 2),
+                        "volume": int(curr['Volume']),
+                        "patterns": " | ".join(summary['patterns']),
+                        "indicators": " | ".join(summary['signals']),
+                        "scan_type": "swing"
+                    }
         except Exception as e:
-            logger.error(f"VCP scan failed for {symbol}: {e}")
+            logger.error(f"Swing check failed for {symbol}: {e}")
             return None
         return None
 
     def check_smc_criteria(self, symbol, override_df=None):
-        """Logic for Smart Money Concepts (SMC) Demand Zones."""
+        """Institutional Order Block check."""
         try:
             if override_df is not None:
                 df = override_df
             else:
                 df = self.data_provider.get_historical_data(symbol, period="6mo")
             
-            if len(df) < 50: return None
+            if df.empty or len(df) < 50: return None
             
             df.columns = [c.lower() for c in df.columns]
             df['timestamp'] = df.index
@@ -164,10 +107,12 @@ class MarketScanner:
             setup = self.smc_engine.check_setup(df)
             if setup and setup['score'] >= 7:
                 close = df['close'].iloc[-1]
+                prev_close = df['close'].iloc[-2]
+                change = ((close - prev_close)/prev_close)*100
                 return {
                     "symbol": symbol,
-                    "price": round(close, 2),
-                    "change_pct": round(((close - df['close'].iloc[-2])/df['close'].iloc[-2])*100, 2),
+                    "price": round(float(close), 2),
+                    "change_pct": round(float(change), 2),
                     "volume": int(df['volume'].iloc[-1]),
                     "patterns": f"SMC: {setup['signal']}",
                     "indicators": " | ".join(setup['reasons']),
@@ -177,103 +122,80 @@ class MarketScanner:
         return None
 
     def run_scan(self):
-        """Runs all scanners in parallel for speed."""
+        """High-speed parallel scan across 2600+ stocks."""
         if self.is_scanning:
-            logger.warning("Scan already in progress, skipping...")
+            logger.warning("Scan already in progress...")
             return []
             
         self.is_scanning = True
-        logger.info(f"Starting parallel market scan for {len(self.symbols_equity)} symbols...")
+        logger.info(f"Starting lightning scan for {len(self.symbols_equity)} stocks...")
         results = []
         
         def process_symbol(symbol):
             symbol_results = []
-            # 1. Swing
-            try:
-                swing = self.check_swing_criteria(symbol)
-                if swing: symbol_results.append(swing)
-            except: pass
-            
-            # 2. VCP
-            try:
-                vcp = self.check_vcp_criteria(symbol)
-                if vcp: symbol_results.append(vcp)
-            except: pass
-            
-            # 3. SMC
+            # 1. SMC Order Blocks
             try:
                 smc = self.check_smc_criteria(symbol)
                 if smc: symbol_results.append(smc)
             except: pass
             
+            # 2. Swing Pick
+            try:
+                swing = self.check_swing_criteria(symbol)
+                if swing: symbol_results.append(swing)
+            except: pass
+            
             return symbol_results
 
-        def fetch_chartink(scanner_obj):
-            try:
-                stocks = scanner_obj.fetch_results()
-                results = []
-                for s in stocks:
-                    results.append({
-                        "symbol": s['symbol'],
-                        "price": s['price'],
-                        "change_pct": s['change_pct'],
-                        "volume": s['volume'],
-                        "patterns": f"Chartink: {scanner_obj.scanner_name}",
-                        "indicators": "Live Alert",
-                        "scan_type": "chartink"
-                    })
-                return results
-            except:
-                return []
-
         try:
-            # Parallel internal scanning (Python logic)
+            # Parallel internal scanning (50 threads)
             with ThreadPoolExecutor(max_workers=50) as executor:
-                # 1. run internal symbol checks
+                # 1. Internal logic
                 future_to_sym = {executor.submit(process_symbol, sym): sym for sym in self.symbols_equity}
                 
-                # 2. run Chartink scanners in parallel too
-                future_to_chartink = {executor.submit(fetch_chartink, c): c.scanner_name for c in self.chartink_scanners}
+                # 2. Chartink logic
+                future_to_chartink = {executor.submit(c.fetch_results): c.scanner_name for c in self.chartink_scanners}
                 
                 for future in as_completed(future_to_sym):
                     res_list = future.result()
-                    if res_list:
-                        results.extend(res_list)
-                        
-                for future in as_completed(future_to_chartink):
-                    chartink_res = future.result()
-                    if chartink_res:
-                        results.extend(chartink_res)
-
-        except Exception as e:
-            logger.error(f"Global scan failed: {e}")
-        finally:
-            self.is_scanning = False
-
-        # Save to DB and Update Cache
-        try:
-            with get_db() as conn:
-                # Clear old cache for dashboard (0-3% range)
-                dashboard_results = [r for r in results if 0 <= r.get('change_pct', 0) <= 3.0]
-                save_dashboard_cache(dashboard_results)
+                    if res_list: results.extend(res_list)
                 
-                for r in results:
-                    conn.execute("""
-                        INSERT INTO scanner_results (symbol, price, change_pct, volume, scan_type, patterns, indicators)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (r['symbol'], r['price'], r['change_pct'], r.get('volume', 0), r['scan_type'], r['patterns'], r['indicators']))
-                    
-                    # Telegram Alerts Logic
-                    if 0 <= r.get('change_pct', 0) <= 3.0:
-                        if not is_already_alerted(r['symbol']):
-                            alert_msg = f"🚀 *{r['symbol']}* ({r['change_pct']:+.2f}%)\nPrice: ₹{r['price']}\nPatterns: {r['patterns']}\nType: {r['scan_type'].upper()}"
-                            if send_telegram_alert(alert_msg):
-                                log_alert(r['symbol'], r['price'], r['change_pct'], r['scan_type'], alert_msg)
+                for future in as_completed(future_to_chartink):
+                    c_stocks = future.result()
+                    for s in (c_stocks or []):
+                        results.append({
+                            "symbol": s['symbol'],
+                            "price": s['price'],
+                            "change_pct": s['change_pct'],
+                            "volume": s.get('volume', 0),
+                            "patterns": "Chartink Live",
+                            "indicators": "Institutional Pick",
+                            "scan_type": "chartink"
+                        })
+
+            # Filter for 0-4% range for Dashboard
+            dashboard_results = []
+            seen = set()
+            for r in results:
+                if r['symbol'] not in seen and 0 <= r.get('change_pct', 0) <= 4.0:
+                    dashboard_results.append(r)
+                    seen.add(r['symbol'])
+            
+            save_dashboard_cache(dashboard_results)
+            
+            # Immediate Telegram Alerts
+            for r in dashboard_results:
+                if not is_already_alerted(r['symbol']):
+                    alert_msg = f"🚀 *{r['symbol']}* ({r['change_pct']:+.2f}%)\nPrice: ₹{r['price']}\nPatterns: {r['patterns']}"
+                    if send_telegram_alert(alert_msg):
+                        log_alert(r['symbol'], r['price'], r['change_pct'], r['scan_type'], alert_msg)
             
             return dashboard_results
         except Exception as e:
-            logger.error(f"Database update failed: {e}")
+            logger.error(f"Global lightning scan failed: {e}")
             return []
+        finally:
+            self.is_scanning = False
 
 if __name__ == "__main__":
     scanner = MarketScanner()
