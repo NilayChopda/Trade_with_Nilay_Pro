@@ -161,6 +161,7 @@ class MarketScanner:
                     if res_list: results.extend(res_list)
                 
                 for future in as_completed(future_to_chartink):
+                    c_name = future_to_chartink[future]
                     c_stocks = future.result()
                     for s in (c_stocks or []):
                         results.append({
@@ -168,8 +169,8 @@ class MarketScanner:
                             "price": s['price'],
                             "change_pct": s['change_pct'],
                             "volume": s.get('volume', 0),
-                            "patterns": "Chartink Live",
-                            "indicators": "Institutional Pick",
+                            "patterns": f"Chartink: {c_name}",
+                            "indicators": "Live Institutional Alert",
                             "scan_type": "chartink"
                         })
 
