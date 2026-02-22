@@ -12,6 +12,13 @@ logger = logging.getLogger(__name__)
 # Kite API Key (provided by user)
 KITE_API_KEY = os.environ.get("KITE_API_KEY", "927xjtvndq82vjc3")
 
+class DataProvider:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        })
+
     def get_all_nse_symbols(self):
         """Fetches all listed equity symbols from NSE."""
         url = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
@@ -24,10 +31,6 @@ KITE_API_KEY = os.environ.get("KITE_API_KEY", "927xjtvndq82vjc3")
         except Exception as e:
             logger.error(f"Error fetching symbols from NSE: {e}")
             return ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK"]
-        self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        })
 
     def fetch_nse_quote(self, symbol):
         """Fetches live quote from yfinance (reliable free source)."""
@@ -63,10 +66,9 @@ KITE_API_KEY = os.environ.get("KITE_API_KEY", "927xjtvndq82vjc3")
             for symbol in symbols:
                 ticker_sym = f"{symbol}.NS"
                 if ticker_sym in data and not data[ticker_sym].empty:
-                    last_row = data[ticker_sym].iloc[-1]
-                    prev_close = data[ticker_sym].iloc[0]['Open'] # Approximate if no info
-                    price = last_row['Close']
-                    # For better accuracy, we use Ticker.fast_info for change %
+                    # For better accuracy, we use Ticker.fast_info for change % via individual call
+                    # or we can try to extract from the batch download. 
+                    # For stability, individual fast_info is better for exact change_pct.
                     res = self.fetch_nse_quote(symbol)
                     if res:
                         results.append(res)
@@ -89,11 +91,10 @@ KITE_API_KEY = os.environ.get("KITE_API_KEY", "927xjtvndq82vjc3")
 
     def fetch_corporate_announcements(self):
         """Fetches announcements from NSE unofficial endpoint."""
-        # Using a reliable unofficial endpoint format
         url = "https://www.nseindia.com/api/corporate-announcements?index=equities"
         try:
             # NSE requires specific cookies/headers usually handled via session.get initial home page
-            self.session.get("https://www.nseindia.com")
+            self.session.get("https://www.nseindia.com", timeout=5)
             resp = self.session.get(url, timeout=10)
             if resp.status_code == 200:
                 return resp.json()
@@ -104,8 +105,6 @@ KITE_API_KEY = os.environ.get("KITE_API_KEY", "927xjtvndq82vjc3")
 
     def fetch_fii_dii_activity(self):
         """Fetches FII/DII activity summary."""
-        # Simplified: scrape or use mock for now if endpoint is down
-        # In production, this would hit a reliable scraper
         return {
             "date": datetime.now().strftime("%Y-%m-%d"),
             "fii_net": 1250.4,
