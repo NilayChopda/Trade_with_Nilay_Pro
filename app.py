@@ -14,13 +14,14 @@ from eod_reports import get_eod_history, EODReportGenerator
 from datetime import datetime
 import pytz
 import threading
+import time
 import json
 from backtester_v3 import OneYearBacktest
 
 # Initialize App
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'nilay_market_secret'
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -63,17 +64,18 @@ scheduler = BackgroundScheduler(timezone=IST)
 scheduler.add_job(func=scheduled_scan, trigger="interval", minutes=5)
 # Fetch announcements every 6 hours
 scheduler.add_job(func=ann_fetcher.fetch_latest, trigger="interval", hours=6)
+# Run EOD report at 3:45 PM IST
+scheduler.add_job(func=daily_tasks, trigger='cron', hour=15, minute=45)
 scheduler.start()
 
 # Initial Startup Scan
 def startup_scan():
+    # Wait a bit for the app to be fully ready
+    time.sleep(10)
     logger.info("Starting initial market scan...")
     scheduled_scan()
 
 threading.Thread(target=startup_scan, daemon=True).start()
-# Run EOD report at 3:45 PM IST
-scheduler.add_job(func=daily_tasks, trigger='cron', hour=15, minute=45)
-scheduler.start()
 
 # --- ROUTES ---
 
