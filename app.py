@@ -68,14 +68,15 @@ scheduler.add_job(func=ann_fetcher.fetch_latest, trigger="interval", hours=6)
 scheduler.add_job(func=daily_tasks, trigger='cron', hour=15, minute=45)
 scheduler.start()
 
-# Initial Startup Scan
-def startup_scan():
+# Initial Startup Tasks
+def startup_tasks():
     # Wait a bit for the app to be fully ready
     time.sleep(10)
-    logger.info("Starting initial market scan...")
+    logger.info("Starting initial market scan and announcement fetch...")
+    ann_fetcher.fetch_latest()
     scheduled_scan()
 
-threading.Thread(target=startup_scan, daemon=True).start()
+threading.Thread(target=startup_tasks, daemon=True).start()
 
 # --- ROUTES ---
 
@@ -113,7 +114,7 @@ def run_backtest():
         return jsonify({"status": "Error", "message": str(e)}), 500
 
 @app.route('/get_backtest_stats')
-def backtest_stats():
+def api_backtest_stats():
     """Returns the latest backtest results."""
     from database import get_db
     with get_db() as conn:
@@ -176,7 +177,7 @@ def backtest_history():
         return jsonify(results)
 
 @app.route('/api/run-backtest')
-def run_backtest():
+def api_run_backtest_trigger():
     """Manually triggers a 1-year backtest."""
     bt = OneYearBacktest()
     # Run in background to avoid timeout
