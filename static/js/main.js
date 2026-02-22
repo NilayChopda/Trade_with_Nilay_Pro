@@ -54,11 +54,13 @@ function loadBacktest() {
 
 function triggerBacktest() {
     const tbody = document.getElementById('backtest-body');
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div><br>Processing 1 Year of Market Data...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div><br>Analysis Started! It will take 2-3 minutes to process 1 year of data. You can check back later.</td></tr>';
 
-    fetch('/run_backtest')
+    fetch('/api/run-backtest')
         .then(res => res.json())
-        .then(() => loadBacktest());
+        .then(() => {
+            setTimeout(loadBacktest, 5000); // Check status after 5s
+        });
 }
 
 // Socket.IO Connection
