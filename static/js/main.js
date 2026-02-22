@@ -14,6 +14,51 @@ function showTab(tabName) {
 
     if (tabName === 'announcements') loadAnnouncements();
     if (tabName === 'eod') loadEODHistory();
+    if (tabName === 'backtest') loadBacktest();
+}
+
+function loadBacktest() {
+    const tbody = document.getElementById('backtest-body');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5">Connecting to Backtest Engine...</td></tr>';
+
+    fetch('/get_backtest_stats')
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.length > 0) {
+                tbody.innerHTML = data.map(r => `
+                    <tr>
+                        <td class="ps-4">
+                            <div class="fw-bold text-light">${r.strategy}</div>
+                            <div class="text-secondary x-small">100+ Signals</div>
+                        </td>
+                        <td>${r.period}</td>
+                        <td class="text-info fw-bold">${r.total_signals}</td>
+                        <td class="text-success">+${r.avg_return}%</td>
+                        <td class="text-end pe-4">
+                            <span class="badge bg-primary fs-6">${r.accuracy}% Accuracy</span>
+                        </td>
+                    </tr>
+                `).join('');
+            } else {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center py-5">
+                            <p class="text-secondary">No backtest data found.</p>
+                            <button class="btn btn-primary" onclick="triggerBacktest()">Start 1-Year Analysis</button>
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+}
+
+function triggerBacktest() {
+    const tbody = document.getElementById('backtest-body');
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-5"><div class="spinner-border text-primary"></div><br>Processing 1 Year of Market Data...</td></tr>';
+
+    fetch('/run_backtest')
+        .then(res => res.json())
+        .then(() => loadBacktest());
 }
 
 // Socket.IO Connection

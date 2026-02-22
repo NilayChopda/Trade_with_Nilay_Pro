@@ -130,7 +130,12 @@ def init_db():
     logger.info("Database initialization complete.")
 
 def save_dashboard_cache(results):
-    """Saves current 0-3% stocks for fast dashboard loading."""
+    """Saves current 0-4% stocks for fast dashboard loading."""
+    if not results:
+        # Don't wipe the cache if we didn't find anything new (e.g. data error or empty scan)
+        logger.warning("Scan returned 0 results, keeping existing cache.")
+        return
+        
     with get_db() as conn:
         conn.execute("DELETE FROM dashboard_cache")
         for r in results:
@@ -145,6 +150,13 @@ def get_dashboard_cache():
     with get_db() as conn:
         cursor = conn.execute("SELECT * FROM dashboard_cache ORDER BY change_pct DESC")
         return [dict(row) for row in cursor.fetchall()]
+
+def get_latest_backtest():
+    """Fetches the latest backtest accuracy."""
+    with get_db() as conn:
+        cursor = conn.execute("SELECT * FROM backtest_results ORDER BY created_at DESC LIMIT 1")
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
 def log_alert(symbol, price, change, alert_type, message):
     """Logs a sent Telegram alert to prevent duplicates."""

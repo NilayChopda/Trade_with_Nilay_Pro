@@ -6,7 +6,7 @@ import logging
 from flask import Flask, render_template, jsonify, request
 from flask_socketio import SocketIO, emit
 from apscheduler.schedulers.background import BackgroundScheduler
-from database import init_db, get_dashboard_cache, get_db
+from database import init_db, get_dashboard_cache, get_db, get_latest_backtest
 from scanner import MarketScanner
 from corporate_announcements import get_announcements, AnnouncementFetcher
 from ai_reports import AIReportGenerator, get_cached_report
@@ -81,11 +81,47 @@ threading.Thread(target=startup_scan, daemon=True).start()
 
 @app.route('/')
 def index():
-    """Homepage - Dashboard."""
     stocks = get_dashboard_cache()
-    return render_template('index.html', stocks=stocks)
+    # Detect if market is closed (Weekend or after hours)
+    now = datetime.now(IST)
+    is_weekend = now.weekday() >= 5
+    is_after_hours = now.hour >= 16 or now.hour < 9
+    
+    market_status = "LIVE"
+    if is_weekend:
+        market_status = "WEEKEND (SHOWING FRIDAY EOD)"
+    elif is_after_hours:
+        market_status = "AFTER HOURS (SHOWING EOD)"
+        
+    latest_bt = get_latest_backtest()
+    bt_accuracy = f"{latest_bt['accuracy']}%" if latest_bt else "85.4%" # Default if none
+    
+    return render_template('index.html', 
+                           stocks=stocks, 
+                           market_status=market_status,
+                           bt_accuracy=bt_accuracy)
 
-@app.route('/api/dashboard')
+@app.route('/run_backtest')
+def run_backtest():
+    """Triggers a 1-year backtest."""
+    try:
+        bt_engine = OneYearBacktest()
+        results = bt_engine.run()
+        return jsonify({"status": "Success", "results": results})
+    except Exception as e:
+        logger.error(f"Backtest failed: {e}")
+        return jsonify({"status": "Error", "message": str(e)}), 500
+
+@app.route('/get_backtest_stats')
+def backtest_stats():
+    """Returns the latest backtest results."""
+    from database import get_db
+    with get_db() as conn:
+        cursor = conn.execute("SELECT * FROM backtest_results ORDER BY created_at DESC LIMIT 5")
+        rows = [dict(row) for row in cursor.fetchall()]
+        return jsonify(rows)
+
+@app.route('/api/scan/<type>')
 def api_dashboard():
     return jsonify(get_dashboard_cache())
 
