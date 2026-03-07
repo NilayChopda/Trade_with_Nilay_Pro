@@ -77,5 +77,6 @@ jobs:
           if [ -n "$deploy_url" ]; then
             curl -X POST "$deploy_url"
           else
-            echo "RENDER_DEPLOY_HOOK_URL not set, skipping"
+            # Fallback to the one provided by user if secret is not set yet
+            curl -X POST "https://api.render.com/deploy/srv-d6cubd7fte5s73d1og9g?key=pAYFTu_4MGob"
           fi
