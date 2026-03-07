@@ -1,0 +1,28 @@
+name: Deploy to Render
+
+# This workflow fires on every push to the main branch.  when the scanner
+# or any code adds/updates the database file it will push to GitHub and
+# the act of pushing will cause Render to build a new release.  additionally
+# we call the Render deploy API explicitly in case you prefer an immediate
+# trigger without waiting for the GitHub-app integration.
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify about the push
+        run: echo "Pushed at $(date) to main, triggering Render."
+
+      - name: Trigger Render deployment via API
+        if: ${{ secrets.RENDER_API_KEY != '' }}
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            https://api.render.com/deploy/srv-<YOUR_SERVICE_ID>
+        env:
+          # RENDER_API_KEY should be stored in the GitHub repo's Secrets.
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}

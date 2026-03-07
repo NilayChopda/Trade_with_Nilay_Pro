@@ -1,7 +1,8 @@
 
 import logging
 import pandas as pd
-import yfinance as yf
+# fundamental data will be fetched via nsepython or datasource instead of yfinance
+from nsepython import nse_fundamental
 from datetime import datetime
 from database import get_db
 
@@ -14,23 +15,21 @@ class AIReportGenerator:
     def get_stock_report(self, symbol):
         """Generates a detailed fundamental and AI summary for a stock."""
         try:
-            ticker = yf.Ticker(f"{symbol}.NS")
-            info = ticker.info
-            
-            # Fundamentals
+            # gather fundamentals from NSE or other provider; using nsepython helper
+            info = nse_fundamental(symbol)
             report = {
                 "symbol": symbol,
-                "name": info.get("longName", symbol),
-                "sector": info.get("sector", "N/A"),
-                "industry": info.get("industry", "N/A"),
-                "pe_ratio": info.get("trailingPE"),
-                "pb_ratio": info.get("priceToBook"),
-                "roe": info.get("returnOnEquity", 0) * 100 if info.get("returnOnEquity") else None,
-                "debt_ratio": info.get("debtToEquity"),
-                "revenue_growth": info.get("revenueGrowth", 0) * 100 if info.get("revenueGrowth") else None,
-                "profit_growth": info.get("earningsGrowth", 0) * 100 if info.get("earningsGrowth") else None,
-                "market_cap": info.get("marketCap", 0) / 10000000, # In Crores
-                "div_yield": info.get("dividendYield", 0) * 100 if info.get("dividendYield") else 0,
+                "name": info.get("Company Name", symbol),
+                "sector": info.get("Industry", "N/A"),
+                "industry": info.get("Industry", "N/A"),
+                "pe_ratio": float(info.get("P/E", 0)) if info.get("P/E") else None,
+                "pb_ratio": float(info.get("P/B", 0)) if info.get("P/B") else None,
+                "roe": float(info.get("ROE", 0)),
+                "debt_ratio": float(info.get("Debt Equity", 0)) if info.get("Debt Equity") else None,
+                "revenue_growth": None,
+                "profit_growth": None,
+                "market_cap": float(info.get("Market Cap", 0)) / 10000000, # In Crores
+                "div_yield": float(info.get("Dividend Yield", 0)) if info.get("Dividend Yield") else 0,
                 "fundamental_summary": self._generate_fundamental_summary(info),
             }
             
@@ -57,14 +56,27 @@ class AIReportGenerator:
 
     def _generate_fundamental_summary(self, info):
         """Creates a human-readable fundamental summary."""
-        name = info.get("longName", "The company")
-        industry = info.get("industry", "its sector")
-        mcap = info.get("marketCap", 0) / 10000000
+        # support both yfinance-like and nsepython-like keys
+        name = info.get("longName") or info.get("Company Name") or "The company"
+        industry = info.get("industry") or info.get("Industry") or "its sector"
+        mcap_val = info.get("marketCap") or info.get("Market Cap") or 0
+        try:
+            mcap = float(mcap_val) / 10000000
+        except:
+            mcap = 0
         
         summary = f"{name} operates in the {industry} space with a market cap of ₹{mcap:,.1f} Cr. "
         
-        roe = info.get("returnOnEquity", 0)
-        debt = info.get("debtToEquity", 0)
+        roe = info.get("returnOnEquity") or info.get("ROE") or 0
+        debt = info.get("debtToEquity") or info.get("Debt Equity") or 0
+        try:
+            roe = float(roe)
+        except:
+            roe = 0
+        try:
+            debt = float(debt)
+        except:
+            debt = 0
         
         if roe > 0.20:
             summary += "It boasts exceptionally high efficiency (ROE > 20%). "

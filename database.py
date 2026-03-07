@@ -114,7 +114,23 @@ def init_db():
             )
         """)
         
+        # 8. Historical Prices (NSE Bhavcopy)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS historical_prices (
+                symbol TEXT NOT NULL,
+                date DATE NOT NULL,
+                open REAL,
+                high REAL,
+                low REAL,
+                close REAL,
+                volume INTEGER,
+                PRIMARY KEY (symbol, date)
+            )
+        """)
+        
         # 6. Dashboard Cache (Top results within 0-3%)
+        # Better to recreate for schema updates since it's just a cache
+        conn.execute("DROP TABLE IF EXISTS dashboard_cache")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,6 +138,9 @@ def init_db():
                 price REAL,
                 change_pct REAL,
                 volume INTEGER,
+                scan_type TEXT,
+                patterns TEXT,
+                indicators TEXT,
                 update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -140,9 +159,17 @@ def save_dashboard_cache(results):
         conn.execute("DELETE FROM dashboard_cache")
         for r in results:
             conn.execute("""
-                INSERT OR REPLACE INTO dashboard_cache (symbol, price, change_pct, volume)
-                VALUES (?, ?, ?, ?)
-            """, (r['symbol'], r['price'], r['change_pct'], r.get('volume', 0)))
+                INSERT OR REPLACE INTO dashboard_cache (symbol, price, change_pct, volume, scan_type, patterns, indicators)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                r['symbol'], 
+                r['price'], 
+                r['change_pct'], 
+                r.get('volume', 0),
+                r.get('scan_type', 'swing'),
+                r.get('patterns', ''),
+                r.get('indicators', '')
+            ))
         conn.commit()
 
 def get_dashboard_cache():

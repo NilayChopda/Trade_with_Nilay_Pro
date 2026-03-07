@@ -99,7 +99,10 @@ function updateDashboardTable(stocks) {
         <tr>
             <td class="ps-4">
                 <div class="fw-bold text-light">${stock.symbol}</div>
-                <div class="text-secondary x-small">NSE Equity</div>
+                ${stock.pattern_badge ? `<div class="x-small" style="line-height:1.2;">${stock.pattern_badge}</div>` : ''}
+                ${stock.pattern_note ? `<div class="text-info x-small">${stock.pattern_note}</div>` : ''}
+                ${stock.target ? `<div class="text-warning x-small">Target: Rs${Number(stock.target).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>` : ''}
+                <div class="text-secondary x-small">${stock.patterns || ''}</div>
             </td>
             <td>₹${Number(stock.price).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             <td>
@@ -159,9 +162,28 @@ function showAIReport(symbol) {
 }
 
 // Scanners Loader
-function loadScanner(type) {
+let customPatternFilter = [];
+function updatePatternFilter(checkbox) {
+    if (checkbox.checked) {
+        customPatternFilter.push(checkbox.value);
+    } else {
+        customPatternFilter = customPatternFilter.filter(p => p !== checkbox.value);
+    }
+}
+
+function applyPatternFilter() {
+    // reload dashboard using selected patterns and default price/change values
+    const patternParam = customPatternFilter.join(',');
+    loadScanner('pattern', patternParam);
+}
+
+function loadScanner(type, patterns = '') {
     const container = document.getElementById(`${type}-scanner-body`);
-    fetch(`/scan-now?type=${type}`)
+    let url = `/scan-now?type=${type}`;
+    if (patterns) {
+        url += `&patterns=${encodeURIComponent(patterns)}`;
+    }
+    fetch(url)
         .then(res => res.json())
         .then(data => {
             const stocks = data.results || [];

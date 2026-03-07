@@ -10,6 +10,30 @@
             </div>
         </div>
     </div>
+    
+    <!-- Pattern filters -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="text-secondary me-2">Patterns:</span>
+                <!-- list of checkboxes -->
+                <label class="form-check form-check-inline text-white">
+                    <input class="form-check-input" type="checkbox" value="CONSOLIDATION" onchange="updatePatternFilter(this)"> Consolidation
+                </label>
+                <label class="form-check form-check-inline text-white">
+                    <input class="form-check-input" type="checkbox" value="VCP" onchange="updatePatternFilter(this)"> VCP
+                </label>
+                <label class="form-check form-check-inline text-white">
+                    <input class="form-check-input" type="checkbox" value="ORDER_BLOCK" onchange="updatePatternFilter(this)"> Order Block
+                </label>
+                <label class="form-check form-check-inline text-white">
+                    <input class="form-check-input" type="checkbox" value="BREAKOUT" onchange="updatePatternFilter(this)"> Breakout
+                </label>
+                <!-- more checkboxes can be added here -->
+                <button class="btn btn-sm btn-light ms-auto" onclick="applyPatternFilter()">Apply</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Stats Summary -->
     <div class="row g-3 mb-4">
@@ -66,7 +90,16 @@
                     <tr>
                         <td class="ps-4">
                             <div class="fw-bold text-light">{{ stock.symbol }}</div>
-                            <div class="text-secondary x-small">NSE Equity</div>
+                            {% if stock.pattern_badge %}
+                            <div class="x-small" style="line-height:1.2;">{{ stock.pattern_badge|safe }}</div>
+                            {% endif %}
+                            {% if stock.pattern_note %}
+                            <div class="text-info x-small">{{ stock.pattern_note }}</div>
+                            {% endif %}
+                            {% if stock.target %}
+                            <div class="text-warning x-small">Target: Rs{{ "{:,.2f}".format(stock.target) }}</div>
+                            {% endif %}
+                            <div class="text-secondary x-small">{{ stock.patterns or '' }}</div>
                         </td>
                         <td>₹{{ "{:,.2f}".format(stock.price) }}</td>
                         <td>

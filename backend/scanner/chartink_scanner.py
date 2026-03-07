@@ -20,13 +20,8 @@ from pathlib import Path
 import sys
 
 # Web scraping imports
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+# selenium is only required for the headless fallback; import lazily to avoid
+# module-level dependency failures (e.g. when running tests or on Render).
 from bs4 import BeautifulSoup
 import requests
 import os
@@ -68,8 +63,14 @@ class ChartinkScanner:
         except:
             return "Chartink Scanner"
     
-    def _setup_driver(self) -> webdriver.Chrome:
+    def _setup_driver(self) -> 'webdriver.Chrome':
         """Set up headless Chrome driver"""
+        # import selenium here so module import does not fail when selenium is
+        # absent.  This method is only called if POST method fails and we're not
+        # on Render.
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+
         chrome_options = Options()
         chrome_options.add_argument('--headless')  # Run in background
         chrome_options.add_argument('--no-sandbox')
@@ -104,183 +105,142 @@ class ChartinkScanner:
 
         logger.info(f"Fetching results for {self.scanner_name}...")
         
-        # 2. Try POST method first (Fastest, no browser needed)
+        # 2. Try URL-based fetch first (standard Chartink behavior for public scanners)
         try:
             results = self._fetch_via_post()
             if results:
+                logger.info(f"POST method succeeded for {self.scanner_name}: Found {len(results)} stocks")
                 self.cache['results'] = results
                 self.cache['timestamp'] = datetime.now()
                 return results
         except Exception as e:
             logger.error(f"POST method failed for {self.scanner_name}: {e}")
 
-        # 3. Try Selenium fallback only if not on Render
-        if not os.path.exists("/data"): # Simple check for Render environment
+        # 3. Selenium Fallback (if available and not on Render)
+        if not os.path.exists("/data"):
             try:
-                # Selenium logic... (kept as secondary fallback)
-                pass 
-            except: pass
+                results = self._fetch_via_selenium()
+                if results:
+                    self.cache['results'] = results
+                    self.cache['timestamp'] = datetime.now()
+                    return results
+            except Exception as e:
+                logger.error(f"Selenium fallback failed: {e}")
             
-        return self._fetch_via_requests() # Final simple scrape fallback
+        return []
 
     def _fetch_via_post(self) -> List[Dict]:
         """Fetch results by mimicking the Chartink web form submission."""
         try:
             session = requests.Session()
             session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': self.scanner_url
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://chartink.com/',
+                'Origin': 'https://chartink.com',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json, text/javascript, */*; q=0.01'
             })
             
-            # 1. Get CSRF and URL components
-            resp = session.get(self.scanner_url, timeout=10)
+            # Step 1: Get the scanner page to extract CSRF token and scan_clause
+            resp = session.get(self.scanner_url, timeout=15)
+            if resp.status_code != 200:
+                return []
+
             soup = BeautifulSoup(resp.text, 'html.parser')
             
+            # Extract CSRF token
             csrf = soup.find('meta', {'name': 'csrf-token'})
-            if not csrf: return []
+            token = csrf.get('content') if csrf else None
             
-            # Extracts the scan_clause from the page script if possible
-            # Standard Chartink pages have 'var obj = { ... scan_clause: "..." }'
-            import re
-            match = re.search(r'scan_clause\s*:\s*"(.*?)"', resp.text)
-            if not match: return []
+            # Extract scan_clause / query
+            scan_clause = None
             
-            scan_clause = match.group(1)
+            # Method 1: Look in scanner component attributes (Modern Chartink)
+            scanner_tag = soup.find('scanner')
+            if scanner_tag:
+                scan_json_str = scanner_tag.get(':scan-json')
+                if scan_json_str:
+                    import json
+                    try:
+                        scan_json = json.loads(scan_json_str)
+                        # The scan_clause is often the 'atlas_query' or constructed from 'atlas_json'
+                        scan_clause = scan_json.get('atlas_query')
+                    except: pass
+                
+                if not scan_clause:
+                    scan_clause = scanner_tag.get('atlas_query')
+
+            # Method 2: Regex Fallbacks
+            if not scan_clause:
+                import re
+                match = re.search(r'scan_clause\s*:\s*"(.*?)"', resp.text)
+                if match:
+                    scan_clause = match.group(1)
             
-            # 2. Post to process
+            if not scan_clause:
+                logger.error(f"Could not find scan clause for {self.scanner_name}")
+                return []
+
+            # Step 2: Post to process endpoint
             api_url = "https://chartink.com/screener/process"
             data = {
                 'scan_clause': scan_clause,
-                '_token': csrf['content']
+                '_token': token
             }
             
-            post_resp = session.post(api_url, data=data, timeout=15)
+            post_resp = session.post(api_url, data=data, timeout=20)
+            if post_resp.status_code != 200:
+                return []
+                
             json_data = post_resp.json()
             
             results = []
             for item in json_data.get('data', []):
+                symbol = item.get('nsecode') or item.get('symbol')
+                if not symbol: continue
+                
                 results.append({
-                    'symbol': (item.get('nsecode') or item.get('symbol')).upper(),
-                    'price': float(item.get('close', 0)),
-                    'change_pct': float(item.get('per_chg', 0)),
-                    'volume': float(item.get('volume', 0)),
+                    'symbol': symbol.upper(),
+                    'price': float(item.get('close') or item.get('last_price') or 0),
+                    'change_pct': float(item.get('per_chg') or item.get('pct_chg') or 0),
+                    'volume': float(item.get('volume') or 0),
                     'timestamp': datetime.now()
                 })
             return results
+
         except Exception as e:
-            logger.error(f"POST fetch failed: {e}")
+            logger.error(f"Error in _fetch_via_post: {e}")
             return []
-            
-            # Try to show 100 entries immediately to avoid pagination slowness
-            try:
-                length_selects = driver.find_elements(By.CSS_SELECTOR, "select[name*='_length'], div.dataTables_length select")
-                if length_selects:
-                    from selenium.webdriver.support.ui import Select
-                    select = Select(length_selects[0])
-                    # Try to select the largest available option (often 100)
-                    options = [o.get_attribute('value') for o in select.options]
-                    if '100' in options:
-                        select.select_by_value('100')
-                        time.sleep(2) # Wait for table to refresh
-                        logger.info("Successfully set page length to 100")
-            except Exception as e:
-                logger.debug(f"Could not change page length: {e}")
 
-            # Find the results table
-            table = None
-            # Wait up to 5s for the actual "Stock Name" text to appear in any table
-            start_wait = time.time()
-            while time.time() - start_wait < 5:
-                all_tables = driver.find_elements(By.TAG_NAME, "table")
-                for t in all_tables:
-                    try:
-                        text = t.text
-                        if ("Stock Name" in text or "Symbol" in text) and "Clause" not in text:
-                            table = t
-                            break
-                    except:
-                        continue
-                if table: break
-                time.sleep(0.5)
+    def _fetch_via_selenium(self) -> List[Dict]:
+        """Fallback Selenium method."""
+        # selenium imports are here to avoid import errors when module imported
+        try:
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+        except ImportError:
+            logger.error("Selenium not available for fallback fetch.")
+            return []
+        
+        driver = None
+        try:
+            driver = self._setup_driver()
+            driver.get(self.scanner_url)
             
-            if not table:
-                logger.warning("Could not find results table, trying fallback method...")
-                return self._fetch_via_requests()
+            # Wait for the table to load
+            wait = WebDriverWait(driver, 20)
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.dataTable, table.table-striped")))
             
-            # Results already handled in the wait loop above
-            if not table:
-                logger.warning("Could not find results table, trying alternative method...")
-                return self._fetch_via_requests()
-
-            # Get results from multiple pages if needed (basic pagination)
-            all_results = []
-            max_pages = 2 # Extremely limited for live view speed
-            current_page = 1
+            time.sleep(3) # Extra wait for JS to populate
             
-            while current_page <= max_pages:
-                # Parse current page
-                page_source = driver.page_source
-                page_results = self._parse_html(page_source)
-                
-                # Deduplicate and add
-                new_added = 0
-                existing_symbols = {r['symbol'] for r in all_results}
-                for r in page_results:
-                    if r['symbol'] not in existing_symbols:
-                        all_results.append(r)
-                        new_added += 1
-                
-                logger.info(f"Page {current_page}: Added {new_added} stocks (Total: {len(all_results)})")
-                
-                if new_added == 0: # No new results or empty page
-                    break
-                    
-                # Try to click 'Next' button
-                try:
-                    next_button = None
-                    button_candidates = driver.find_elements(By.TAG_NAME, "button")
-                    for btn in button_candidates:
-                        if "Next" in btn.text and ">>" not in btn.text and btn.is_enabled() and btn.is_displayed():
-                            next_button = btn
-                            break
-                    
-                    if next_button:
-                        # Scroll to button to ensure it's clickable
-                        driver.execute_script("arguments[0].scrollIntoView();", next_button)
-                        time.sleep(0.5)
-                        next_button.click()
-                        time.sleep(1.5) # Reduced wait for next page
-                        current_page += 1
-                    else:
-                        break
-                except Exception as e:
-                    logger.debug(f"Pagination end or error: {e}")
-                    break
-            
-            # Cache results
-            self.cache['results'] = all_results
-            self.cache['timestamp'] = datetime.now()
-            
-            logger.info(f"Successfully fetched {len(all_results)} stocks from {self.scanner_name}")
-            
-            return all_results
-            
+            return self._parse_html(driver.page_source)
         except Exception as e:
-            logger.error(f"Error fetching Chartink results: {e}", exc_info=True)
-            
-            # Try fallback method
-            try:
-                return self._fetch_via_requests()
-            except Exception as e2:
-                logger.error(f"Fallback method also failed: {e2}")
-                return []
-            
+            logger.error(f"Selenium fetch failed: {e}")
+            return []
         finally:
             if driver:
-                try:
-                    driver.quit()
-                except:
-                    pass
+                driver.quit()
     
     def _fetch_via_requests(self) -> List[Dict]:
         """

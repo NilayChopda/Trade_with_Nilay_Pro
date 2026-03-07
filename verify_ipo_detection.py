@@ -2,8 +2,10 @@
 import os
 import sys
 import pandas as pd
-import yfinance as yf
 from pathlib import Path
+
+# use DataProvider instead of yfinance for consistency
+from data_provider import DataProvider
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -17,14 +19,13 @@ def test_symbols():
     for s in symbols:
         print(f"\n--- Testing {s} ---")
         try:
-            df = yf.download(f"{s}.NS", period="1y", progress=False)
+            # fetch historical data via DataProvider
+            dp = DataProvider()
+            df = dp.get_historical_data(s, period="1y")
             if df.empty:
                 print(f"No data for {s}")
                 continue
-                
-            df.columns = [c.lower() for c in df.columns]
-            df['timestamp'] = df.index
-            
+
             result = detector.analyze(df, s)
             print(f"Patterns found: {result['patterns']}")
             print(f"Primary Pattern: {result['primary_pattern']}")

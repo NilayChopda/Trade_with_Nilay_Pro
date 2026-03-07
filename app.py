@@ -48,10 +48,42 @@ def scheduled_scan():
     except Exception as e:
         logger.error(f"Scan failed: {e}")
 
+def import_bhavcopy_for_today():
+    """Download today's bhavcopy and save to historical_prices table."""
+    from kite_provider import download_bhavcopy
+    from database import get_db
+    df = download_bhavcopy(datetime.now())
+    if df is None or df.empty:
+        logger.warning("Bhavcopy download failed or returned empty")
+        return
+    with get_db() as conn:
+        for _, row in df.iterrows():
+            sym = str(row.get('SYMBOL')).strip().upper()
+            try:
+                conn.execute("""
+                    INSERT OR REPLACE INTO historical_prices
+                    (symbol, date, open, high, low, close, volume)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    sym,
+                    row.get('TIMESTAMP') or row.get('TIMESTAMP') or datetime.now().strftime("%Y-%m-%d"),
+                    row.get('OPEN') or row.get('OPEN_PRICE') or 0,
+                    row.get('HIGH') or row.get('HIGH_PRICE') or 0,
+                    row.get('LOW') or row.get('LOW_PRICE') or 0,
+                    row.get('CLOSE') or row.get('CLOSE_PRICE') or 0,
+                    row.get('TOTTRDQTY') or row.get('TOT_TRD_QTY') or 0
+                ))
+        conn.commit()
+    logger.info("Imported bhavcopy into historical_prices table")
+
+
 def daily_tasks():
     """Fetches announcements and runs EOD cleanup."""
     logger.info("Running daily maintenance tasks...")
     ann_fetcher.fetch_latest()
+    
+    # import today's raw data so backtests/EOD have it
+    import_bhavcopy_for_today()
     
     # Generate EOD for dashboard results
     stocks = get_dashboard_cache()
@@ -60,12 +92,16 @@ def daily_tasks():
 
 # Scheduler
 scheduler = BackgroundScheduler(timezone=IST)
-# Run scanner every 5 mins during market hours
-scheduler.add_job(func=scheduled_scan, trigger="interval", minutes=5)
+# Run scanner frequently (every minute) during market hours
+# If you want to restrict to hours, you can switch to a cron trigger; this
+# example runs 1-minute scans always, you can fine-tune using start_date / end_date.
+scheduler.add_job(func=scheduled_scan, trigger="interval", minutes=1)
 # Fetch announcements every 6 hours
 scheduler.add_job(func=ann_fetcher.fetch_latest, trigger="interval", hours=6)
-# Run EOD report at 3:45 PM IST
+# Run EOD report at 3:45 PM IST (will also import bhavcopy)
 scheduler.add_job(func=daily_tasks, trigger='cron', hour=15, minute=45)
+# Import bhavcopy again after market close (in case file becomes available later)
+scheduler.add_job(func=import_bhavcopy_for_today, trigger='cron', hour=18, minute=0)
 scheduler.start()
 
 # Initial Startup Tasks
@@ -144,19 +180,44 @@ def api_eod_history():
 
 @app.route('/scan-now')
 def scan_now():
-    """Manual trigger for scanners."""
-    scan_type = request.args.get('type', 'swing') # 'swing', 'fno', 'vcp', 'smc', 'chartink'
+    """Manual trigger for scanners.
+
+    Query parameters can override scanner filters temporarily:
+      patterns=CONSOLIDATION,VCP
+      min_price=100
+      max_price=1000
+      min_change=2
+      max_change=10
+    """
+    scan_type = request.args.get('type', 'swing') # 'swing', 'fno', 'vcp', 'smc', 'chartink', 'pattern'
+
+    # optional overrides
+    patterns = request.args.get('patterns')
+    if patterns:
+        scanner.scan_patterns = [p.strip().upper() for p in patterns.split(',') if p.strip()]
+
+    for param in ['min_price','max_price','min_change','max_change']:
+        val = request.args.get(param)
+        if val is not None:
+            try:
+                setattr(scanner, param, float(val))
+            except ValueError:
+                pass
+
     results = scanner.run_scan() # Runs all, updates cache
     
     # Filter for the requested type to return to frontend
-    filtered = [r for r in results if r['scan_type'] == scan_type]
+    if scan_type and scan_type != 'all':
+        filtered = [r for r in results if r['scan_type'] == scan_type]
+    else:
+        filtered = results
     
     return jsonify({
         "status": "Success", 
         "count": len(filtered),
         "results": filtered
     })
-
+í
 # --- SOCKET EVENTS ---
 
 @socketio.on('connect')

@@ -32,12 +32,20 @@ class PatternDetector:
         
         patterns_found = []
         
-        # Detect each pattern type
+        # Detect each pattern type and add a human-readable note
         if self.is_breakout(df):
-            patterns_found.append({"type": "BREAKOUT", "confidence": self.breakout_confidence(df)})
+            patterns_found.append({
+                "type": "BREAKOUT",
+                "confidence": self.breakout_confidence(df),
+                "note": "Price moved above 20‑day high with volume confirmation"
+            })
         
         if self.is_order_block(df):
-            patterns_found.append({"type": "ORDER_BLOCK", "confidence": self.order_block_confidence(df)})
+            patterns_found.append({
+                "type": "ORDER_BLOCK",
+                "confidence": self.order_block_confidence(df),
+                "note": "Bullish rally after a bearish candle indicates institutional order block"
+            })
         
         support, resistance = self.find_support_resistance(df)
         if support or resistance:
@@ -45,14 +53,29 @@ class PatternDetector:
                 "type": "SUPPORT_RESISTANCE",
                 "confidence": 0.8,
                 "support": support,
-                "resistance": resistance
+                "resistance": resistance,
+                "note": "Defined support/resistance levels with multiple touches"
             })
         
         if self.is_consolidation(df):
-            patterns_found.append({"type": "CONSOLIDATION", "confidence": self.consolidation_confidence(df)})
+            # treat tight-range consolidation as box/tight zone as well
+            patterns_found.append({
+                "type": "CONSOLIDATION",
+                "confidence": self.consolidation_confidence(df),
+                "note": "Tight 10‑day range (<3%) signalling a box/tight zone setup"
+            })
+            patterns_found.append({
+                "type": "BOX",
+                "confidence": self.consolidation_confidence(df),
+                "note": "Alias for consolidation; useful for UI/filters"
+            })
 
         if self.is_vcp(df):
-            patterns_found.append({"type": "VCP", "confidence": self.vcp_confidence(df)})
+            patterns_found.append({
+                "type": "VCP",
+                "confidence": self.vcp_confidence(df),
+                "note": "Volatility contraction pattern with shrinking drops and volume dry‑up"
+            })
 
         if self.is_ipo_base(df):
             patterns_found.append({"type": "IPO_BASE", "confidence": 0.8})
@@ -66,11 +89,31 @@ class PatternDetector:
         # Determine primary pattern (highest confidence)
         primary = max(patterns_found, key=lambda x: x['confidence']) if patterns_found else None
         
+        # detect last candle shape
+        candlestick = self.detect_candlestick(df)
+
+        # compute simple breakout target for box/consolidation/cup patterns
+        target = None
+        target_pct = None
+        if primary and primary['type'] in ("CONSOLIDATION", "BOX", "VCP", "BREAKOUT", "CUP", "SUPPORT_RESISTANCE", "ORDER_BLOCK"):
+            # use support/resistance levels to estimate height
+            sup, res = self.find_support_resistance(df)
+            if sup and res:
+                height = res - sup
+                current = df['close'].iloc[-1]
+                tgt = current + height
+                target = round(tgt, 2)
+                if current > 0:
+                    target_pct = round(((tgt - current) / current) * 100, 2)
+
         return {
             "symbol": symbol,
             "patterns": patterns_found,
             "primary_pattern": primary['type'] if primary else None,
-            "confidence": primary['confidence'] if primary else 0
+            "confidence": primary['confidence'] if primary else 0,
+            "candlestick": candlestick,
+            "target": target,
+            "target_pct": target_pct
         }
     
     def is_breakout(self, df: pd.DataFrame) -> bool:
@@ -356,6 +399,41 @@ class PatternDetector:
         curr_vol = df['volume'].iloc[-1]
         ratio = curr_vol / avg_vol
         return min(1.0, ratio / 5.0)
+
+    # --- Candlestick helpers ---
+    def detect_candlestick(self, df: pd.DataFrame) -> str:
+        """Return simple candlestick pattern name for the last candle."""
+        if df.empty or len(df) < 2:
+            return None
+        last = df.iloc[-1]
+        prev = df.iloc[-2]
+
+        body = abs(last['close'] - last['open'])
+        lower_shadow = last['open'] - last['low'] if last['close'] >= last['open'] else last['close'] - last['low']
+        upper_shadow = last['high'] - last['close'] if last['close'] >= last['open'] else last['high'] - last['open']
+
+        # Bullish Engulfing
+        if last['close'] > last['open'] and prev['close'] < prev['open']:
+            if last['open'] <= prev['close'] and last['close'] >= prev['open']:
+                return "Bullish Engulfing"
+
+        # Bearish Engulfing
+        if last['close'] < last['open'] and prev['close'] > prev['open']:
+            if last['open'] >= prev['close'] and last['close'] <= prev['open']:
+                return "Bearish Engulfing"
+
+        # Hammer (small body near high, long lower shadow)
+        if body < (last['high'] - last['low']) * 0.3 and lower_shadow > body * 2 and upper_shadow < body:
+            if last['close'] > last['open']:
+                return "Hammer"
+            else:
+                return "Hanging Man"
+
+        # Doji
+        if body < (last['high'] - last['low']) * 0.1:
+            return "Doji"
+
+        return None
 
 if __name__ == "__main__":
     pass

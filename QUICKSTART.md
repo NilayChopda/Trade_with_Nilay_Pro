@@ -36,7 +36,7 @@
 | **Breakout Engine** | ✅ Active | 20-Day High + Volume detection |
 | **AI Technical Scorer**| ✅ Active | 0-10 Score + English Explanation |
 | **Pro Dashboard** | ✅ Ready | TradingView charts + Auto-refresh |
-| **Telegram Alerts** | ✅ Live | Professional Signal Formatting |
+| **Telegram Alerts** | ✅ Live | Professional Signal Formatting (+Chart link/notes) |
 | **Auto-Recovery** | ✅ Ready | Docker-compose auto-restart |
 
 ---

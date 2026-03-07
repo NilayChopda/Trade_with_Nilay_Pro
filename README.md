@@ -24,7 +24,7 @@ A production-ready quantitative analysis platform for the Indian stock market (N
 -   **Database**: SQLite (WAL Mode)
 -   **Task Queue**: APScheduler
 -   **Frontend**: Bootstrap 5 / Vanilla JS
--   **Data Sources**: yfinance, NSE Unofficial APIs, Kite API
+-   **Data Sources**: NSE Unofficial APIs, Kite API (no Yahoo/YFinance required)
 
 ---
 
@@ -58,6 +58,29 @@ A production-ready quantitative analysis platform for the Indian stock market (N
 1.  Connect this GitHub repository to [Render.com](https://render.com).
 2.  Choose **Web Service**.
 3.  Render will auto-detect `render.yaml` for configuration.
+
+#### 📦 Environment variables
+Add the following settings (via Render dashboard or `.env`) to control filtering and pattern scanning:
+
+You can also adjust filters live from the dashboard using the checkboxes above the
+main table.  Select any combination of patterns (Consolidation, VCP, Order Block,
+Breakout, etc.) and click **Apply** – the server will re‑run the scan with those
+patterns and display only matching stocks.
+
+
+- `MIN_PRICE` – minimum stock price to include (default `100`).
+- `MAX_PRICE` – maximum price; leave blank or large number for "no limit".
+- `MIN_CHANGE` – minimum percent move (default `0`).
+- `MAX_CHANGE` – maximum percent move (default `20`).
+- `SCAN_PATTERNS` – comma‑separated list of pattern codes to scan for. Defaults to
+  `CONSOLIDATION,VCP,ORDER_BLOCK,BREAKOUT` but you can add `IPO_BASE`,
+  `ROCKET_BASE`, etc.
+- `ALERT_PCT` – send extra Telegram alerts for any symbol whose price change is
+  greater than or equal to this percentage (default `5.0`). Useful for
+  tagging large breakouts even if they fall outside the regular filter.
+
+The application will automatically label results with the detected pattern and
+any recognised candlestick (bullish engulfing, hammer, doji, etc.).
 4.  Ensure a Persistent Disk is attached at `/data` if `DATABASE_URL` is configured to point there.
 
 ---
@@ -67,6 +90,7 @@ A production-ready quantitative analysis platform for the Indian stock market (N
 -   `KITE_API_KEY`: `927xjtvndq82vjc3`
 -   `TELEGRAM_BOT_TOKEN`: `8289967600:AAFSLnB1eCSYpKOdIenz398AcdJ5utcNyIs`
 -   `TELEGRAM_CHAT_ID`: `810052560`
+-   `TRADINGVIEW_BASE` *(optional)*: link template for chart previews. use `{symbol}` placeholder, e.g. `https://in.tradingview.com/symbols/NSE-{symbol}/`.
 
 ---
 

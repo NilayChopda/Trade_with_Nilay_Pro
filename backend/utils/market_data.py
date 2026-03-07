@@ -2,7 +2,6 @@
 import os
 import requests
 import pandas as pd
-import yfinance as yf
 import logging
 from bs4 import BeautifulSoup
 from typing import Dict, List, Optional
@@ -28,14 +27,8 @@ class MarketData:
         price = MarketData._fetch_google_finance(clean_sym)
         if price: return price
         
-        # 2. Yahoo Finance (Standard Fallback)
-        try:
-            ticker = yf.Ticker(f"{clean_sym}.NS")
-            price = ticker.fast_info.get('last_price')
-            if price: return price
-        except:
-            pass
-            
+        # 2. Kite/NSEp fallback could be implemented here if needed
+        # For now we return None to force callers to use DataProvider directly.
         return None
 
     @staticmethod
@@ -44,28 +37,10 @@ class MarketData:
         Efficiently fetch multiple prices.
         """
         results = {}
-        # Try YFinance batch first as it's efficient for 50+ stocks
-        try:
-            yf_syms = [f"{s.split('.')[0]}.NS" for s in symbols]
-            data = yf.download(yf_syms, period="1d", interval="1m", progress=False, group_by='ticker')
-            
-            for s in symbols:
-                clean_s = s.split('.')[0]
-                yf_s = f"{clean_s}.NS"
-                try:
-                    if len(symbols) > 1:
-                        results[s] = data[yf_s]['Close'].iloc[-1]
-                    else:
-                        results[s] = data['Close'].iloc[-1]
-                except:
-                    # Individual fallback
-                    p = MarketData.get_live_price(s)
-                    if p: results[s] = p
-        except:
-            for s in symbols:
-                p = MarketData.get_live_price(s)
-                if p: results[s] = p
-                
+        # Use individual live price fetch for each symbol (no yfinance)
+        for s in symbols:
+            p = MarketData.get_live_price(s)
+            if p: results[s] = p
         return results
 
     @staticmethod
