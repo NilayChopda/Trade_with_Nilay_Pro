@@ -129,8 +129,6 @@ def init_db():
         """)
         
         # 6. Dashboard Cache (Top results within 0-3%)
-        # Better to recreate for schema updates since it's just a cache
-        conn.execute("DROP TABLE IF EXISTS dashboard_cache")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS dashboard_cache (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
