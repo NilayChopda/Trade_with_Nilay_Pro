@@ -17,3 +17,4 @@ selenium
 lxml
 plotly
 altair
+eventlet

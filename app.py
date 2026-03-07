@@ -73,6 +73,8 @@ def import_bhavcopy_for_today():
                     row.get('CLOSE') or row.get('CLOSE_PRICE') or 0,
                     row.get('TOTTRDQTY') or row.get('TOT_TRD_QTY') or 0
                 ))
+            except Exception as e:
+                logger.error(f"Error inserting historical price for {sym}: {e}")
         conn.commit()
     logger.info("Imported bhavcopy into historical_prices table")
 
