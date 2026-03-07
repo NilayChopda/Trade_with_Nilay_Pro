@@ -160,9 +160,15 @@ def api_backtest_stats():
         rows = [dict(row) for row in cursor.fetchall()]
         return jsonify(rows)
 
-@app.route('/api/scan/<type>')
-def api_dashboard():
-    return jsonify(get_dashboard_cache())
+@app.route('/api/dashboard')
+def api_dashboard_data():
+    """Returns the latest filtered market results for the dashboard."""
+    try:
+        results = get_dashboard_cache()
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Error fetching dashboard cache: {e}")
+        return jsonify([])
 
 @app.route('/api/announcements')
 def api_announcements():
