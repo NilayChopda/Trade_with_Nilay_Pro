@@ -280,12 +280,14 @@ class MarketScanner:
                     else:
                         tv_md = ''
 
+                    note_ext = f" \n{note}" if note else ""
+                    target_str = f"\n🎯 Target: ₹{r['target']} ({r['target_pct']:+.1f}%)" if r.get('target') else ''
                     alert_msg = (
                         f"🚀 *{sym}* ({r['change_pct']:+.2f}%)\n"
                         f"Price: ₹{r['price']}\n"
                         f"Patterns: {r['patterns']}"
-                        f"{(' \n'+note) if note else ''}"
-                        f"{(f'\n🎯 Target: ₹{r["target"]} ({r["target_pct"]:+.1f}%)') if r.get('target') else ''}"
+                        f"{note_ext}"
+                        f"{target_str}"
                         f"{tv_md}"
                     )
                     if send_telegram_alert(alert_msg):
@@ -305,9 +307,10 @@ class MarketScanner:
                         else:
                             tv_md = ''
                         target_str = f"\n🎯 Target: ₹{r['target']} ({r['target_pct']:+.1f}%)" if r.get('target') else ''
+                        note_ext = f" \n{note}" if note else ""
                         msg = (
                             f"🔥 *BREAKOUT* {sym} {r['change_pct']:+.2f}% – ₹{r.get('price')} | {r.get('patterns','')}"
-                            f"{(' \n'+note) if note else ''}"
+                            f"{note_ext}"
                             f"{target_str}"
                             f"{tv_md}"
                         )
