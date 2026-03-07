@@ -217,9 +217,7 @@ def scan_now():
     return jsonify({
         "status": "Success", 
         "count": len(filtered),
-        "results": filtered
     })
-í
 # --- SOCKET EVENTS ---
 
 @socketio.on('connect')

@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from data_provider import DataProvider
 from scanner import MarketScanner
 from database import get_db
+import json
 
 logger = logging.getLogger("twn.backtester")
 
