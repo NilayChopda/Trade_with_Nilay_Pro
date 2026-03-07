@@ -80,21 +80,45 @@ class MarketScanner:
         def process_symbol(symbol):
             try:
                 df = self.data_provider.get_historical_data(symbol, period="1y")
+                if df.empty or len(df) < 2:
+                    return []
+                    
                 pdinfo = self.pattern_detector.analyze(df, symbol, nifty_df=nifty_df)
 
                 primary = pdinfo.get('primary_pattern')
-                if not primary: # Still keep stocks if they have high RS even if no pattern
+                live = self.data_provider.fetch_nse_quote(symbol)
+                
+                # Weekend Fallback Logic
+                # If market is closed (ch close to 0 or it's Sat/Sun), 
+                # use the change from the last available trading candle (Friday vs Thursday)
+                is_weekend = datetime.now().weekday() in [5, 6] or (datetime.now().weekday() == 0 and datetime.now().hour < 9)
+                
+                price = float(live.get('price', 0)) if live else df['close'].iloc[-1]
+                ch = float(live.get('change_pct', 0)) if live else 0
+                
+                if (is_weekend or ch == 0) and len(df) >= 2:
+                    # Daily change of the last candle
+                    prev_close = df['close'].iloc[-2]
+                    curr_close = df['close'].iloc[-1]
+                    ch = ((curr_close - prev_close) / prev_close) * 100
+                    price = curr_close
+
+                if not primary:
                     if pdinfo.get('rs_score', 0) > 95:
                         primary = "HIGH_RS"
                     else:
                         return []
                 
-                if primary.upper() not in self.scan_patterns and primary != "HIGH_RS":
-                    return []
-
-                live = self.data_provider.fetch_nse_quote(symbol)
-                if not live:
-                    return []
+                # Setup prioritization: Elite setups are ALWAYS kept for study
+                elite_patterns = ["VCP", "HIGH_TIGHT_FLAG", "BLUE_SKY", "HIGH_RS"]
+                is_elite = any(p in (primary or '') for p in elite_patterns)
+                
+                if not is_elite:
+                    if primary.upper() not in self.scan_patterns:
+                        return []
+                    # Standard filters for non-elite
+                    if not (self.min_change <= ch <= self.max_change):
+                        return []
 
                 pat_label = primary
                 primary_note = ''
@@ -109,9 +133,9 @@ class MarketScanner:
                 badge_html = self.pattern_detector.get_pattern_badge(primary, pdinfo.get('confidence',0)) if primary else ''
                 return [{
                     "symbol": symbol,
-                    "price": round(float(live.get('price', 0)), 2),
-                    "change_pct": round(float(live.get('change_pct', 0)), 2),
-                    "volume": int(live.get('volume', 0)),
+                    "price": round(price, 2),
+                    "change_pct": round(ch, 2),
+                    "volume": int(live.get('volume', 0)) if live else int(df['volume'].iloc[-1]),
                     "patterns": pat_label,
                     "pattern_note": primary_note,
                     "pattern_badge": badge_html,
@@ -182,16 +206,30 @@ class MarketScanner:
             seen = set()
             index_keywords = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'CNX', 'INDIA VIX', 'SENSEX']
             
+            is_weekend = datetime.now().weekday() in [5, 6] or (datetime.now().weekday() == 0 and datetime.now().hour < 9)
+            elite_patterns = ["VCP", "HIGH_TIGHT_FLAG", "BLUE_SKY", "HIGH_RS"]
+
             for r in results:
                 symbol = r['symbol'].upper()
                 if symbol in seen or any(k in symbol for k in index_keywords):
                     continue
+                
                 price = r.get('price', 0)
                 ch = r.get('change_pct', 0)
-                if not (self.min_price <= price <= self.max_price):
-                    continue
-                if not (self.min_change <= ch <= self.max_change):
-                    continue
+                setup = r.get('patterns', '')
+                is_elite = any(p in setup for p in elite_patterns)
+
+                # Relax filters for Elite setups or Weekend study
+                if not is_elite:
+                    if not (self.min_price <= price <= self.max_price):
+                        continue
+                    if not (self.min_change <= ch <= self.max_change):
+                        continue
+                else:
+                    # For elite, just ensure price is reasonable
+                    if not (self.min_price <= price):
+                        continue
+
                 dashboard_results.append(r)
                 seen.add(symbol)
 
