@@ -68,8 +68,11 @@ let lastRecommendation = null;
 
 socket.on('connect', () => {
     console.log('Connected to Trade with Nilay Terminal');
-    document.getElementById('market-status').innerHTML = '<i class="bi bi-circle-fill small me-1"></i> LIVE';
-    document.getElementById('market-status').classList.add('text-info');
+    const statusEl = document.getElementById('market-status');
+    if (statusEl) {
+        statusEl.innerHTML = '<i class="bi bi-circle-fill small me-1"></i> LIVE';
+        statusEl.classList.add('text-info');
+    }
 });
 
 socket.on('market_update', (data) => {
@@ -85,7 +88,10 @@ socket.on('market_update', (data) => {
             showInstantPopup(strongest);
         }
     }
-    document.getElementById('last-update-time').innerText = new Date().toLocaleTimeString();
+    const lastUpdateEl = document.getElementById('last-update-time');
+    if (lastUpdateEl) {
+        lastUpdateEl.innerText = new Date().toLocaleTimeString();
+    }
 });
 
 function updateDashboardTable(stocks) {
@@ -120,7 +126,10 @@ function updateDashboardTable(stocks) {
         </tr>
     `).join('');
 
-    document.getElementById('total-results').innerText = stocks.length;
+    const totalResultsEl = document.getElementById('total-results');
+    if (totalResultsEl) {
+        totalResultsEl.innerText = stocks.length;
+    }
 }
 
 // AI Report Modal

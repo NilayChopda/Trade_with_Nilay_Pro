@@ -46,6 +46,7 @@ Your professional stock terminal is **production-ready**. Below are the final st
 1. In Render, go to **Settings** -> **Custom Domains**.
 2. Add `trade-with-nilay.com`.
 3. In your Domain Registrar (Godaddy/Namecheap):
+
    - **A Record**: Host `@`, Value: (Get the IP from Render dashboard)
    - **CNAME Record**: Host `www`, Value: `trade-with-nilay.onrender.com`
 
