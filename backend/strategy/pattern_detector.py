@@ -433,6 +433,16 @@ class PatternDetector:
         if body < (last['high'] - last['low']) * 0.1:
             return "Doji"
 
+        # Bullish Harami (Large bearish candle followed by small bullish candle inside the body)
+        if prev['close'] < prev['open'] and last['close'] > last['open']:
+            if last['open'] > prev['close'] and last['close'] < prev['open']:
+                if (prev['open'] - prev['close']) > (last['close'] - last['open']) * 2:
+                    return "Bullish Harami"
+
+        # Inside Bar (Last candle's high/low are dentro the previous candle's high/low)
+        if last['high'] < prev['high'] and last['low'] > prev['low']:
+            return "Inside Bar"
+
         return None
 
 if __name__ == "__main__":

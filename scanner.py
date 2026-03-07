@@ -268,126 +268,35 @@ class MarketScanner:
             logger.info(f"Scan complete. Total raw: {len(results)}, Valid stocks: {len(dashboard_results)}")
             save_dashboard_cache(dashboard_results)
 
-            # Immediate Telegram Alerts (pattern results)
-            for r in dashboard_results:
-                if not is_already_alerted(r['symbol']):
-                    sym = r['symbol']
-                    note = r.get('pattern_note') or ''
-                    tv_link = os.getenv('TRADINGVIEW_BASE', '').strip()
-                    if tv_link:
-                        tv_link = tv_link.format(symbol=sym)
-                        tv_md = f"\n🔗 [Chart]({tv_link})"
-                    else:
-                        tv_md = ''
-
-                    note_ext = f" \n{note}" if note else ""
-                    target_str = f"\n🎯 Target: ₹{r['target']} ({r['target_pct']:+.1f}%)" if r.get('target') else ''
-                    alert_msg = (
-                        f"🚀 *{sym}* ({r['change_pct']:+.2f}%)\n"
-                        f"Price: ₹{r['price']}\n"
-                        f"Patterns: {r['patterns']}"
-                        f"{note_ext}"
-                        f"{target_str}"
-                        f"{tv_md}"
-                    )
-                    if send_telegram_alert(alert_msg):
-                        log_alert(sym, r['price'], r['change_pct'], r['scan_type'], alert_msg)
-
-            # Additional breakout threshold alerts on all raw results
-            breakout_limit = float(os.getenv('ALERT_PCT', 5.0))
+            # --- REFINED TELEGRAM ALERTS (User Condition: -1% to +3% + Candlestick) ---
+            allowed_candles = ["Doji", "Hammer", "Bullish Engulfing", "Bullish Harami", "Inside Bar"]
+            
             for r in results:
-                if r.get('change_pct', 0) >= breakout_limit:
+                ch = r.get('change_pct', 0)
+                if -1.0 <= ch <= 3.0:
                     sym = r['symbol']
                     if not is_already_alerted(sym):
-                        note = r.get('pattern_note') or ''
-                        tv_link = os.getenv('TRADINGVIEW_BASE', '').strip()
-                        if tv_link:
-                            tv_link = tv_link.format(symbol=sym)
-                            tv_md = f"\n🔗 [Chart]({tv_link})"
-                        else:
-                            tv_md = ''
-                        target_str = f"\n🎯 Target: ₹{r['target']} ({r['target_pct']:+.1f}%)" if r.get('target') else ''
-                        note_ext = f" \n{note}" if note else ""
-                        msg = (
-                            f"🔥 *BREAKOUT* {sym} {r['change_pct']:+.2f}% – ₹{r.get('price')} | {r.get('patterns','')}"
-                            f"{note_ext}"
-                            f"{target_str}"
-                            f"{tv_md}"
-                        )
-                        if send_telegram_alert(msg):
-                            log_alert(sym, r.get('price'), r.get('change_pct'), r.get('scan_type','breakout'), msg)
-            
-            return dashboard_results
-        except Exception as e:
-            logger.error(f"Global lightning scan failed: {e}")
-            return []
-        finally:
-            self.is_scanning = False
-
-        try:
-            # Parallel internal scanning (50 threads)
-            with ThreadPoolExecutor(max_workers=50) as executor:
-                # 1. Internal logic
-                future_to_sym = {executor.submit(process_symbol, sym): sym for sym in self.symbols_equity}
-                
-                # 2. Chartink logic
-                future_to_chartink = {executor.submit(c.fetch_results): c.scanner_name for c in self.chartink_scanners}
-                
-                for future in as_completed(future_to_sym):
-                    res_list = future.result()
-                    if res_list: results.extend(res_list)
-                
-                for future in as_completed(future_to_chartink):
-                    c_name = future_to_chartink[future]
-                    c_stocks = future.result()
-                    
-                    # Determine type
-                    s_type = "swing"
-                    if "fno" in c_name.lower():
-                        s_type = "fno"
+                        # Detect candle on last 5 days
+                        df_hist = self.data_provider.get_historical_data(sym, period="5d")
+                        pdinfo = self.pattern_detector.analyze(df_hist, sym)
+                        candle = pdinfo.get('candlestick')
                         
-                    for s in (c_stocks or []):
-                        results.append({
-                            "symbol": s['symbol'],
-                            "price": s['price'],
-                            "change_pct": s['change_pct'],
-                            "volume": s.get('volume', 0),
-                            "patterns": f"Chartink: {c_name}",
-                            "indicators": "Live Institutional Alert",
-                            "scan_type": s_type
-                        })
-
-            # Filter for 0-4% range for Dashboard
-            dashboard_results = []
-            seen = set()
-            
-            # Common Index prefixes/suffixes to filter out
-            index_keywords = ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'CNX', 'INDIA VIX', 'SENSEX']
-            
-            for r in results:
-                symbol = r['symbol'].upper()
-                # Skip already seen, indices, and check range
-                is_index = any(k in symbol for k in index_keywords)
-                
-                if (symbol not in seen and 
-                    not is_index and 
-                    0 <= r.get('change_pct', 0) <= 4.1): # Tight range
-                    dashboard_results.append(r)
-                    seen.add(symbol)
-            
-            # Sort by change % descending and pick top 30
-            dashboard_results.sort(key=lambda x: x['change_pct'], reverse=True)
-            dashboard_results = dashboard_results[:30]
-            
-            logger.info(f"Scan complete. Total raw: {len(results)}, Valid stocks: {len(dashboard_results)}")
-            save_dashboard_cache(dashboard_results)
-            
-            # Immediate Telegram Alerts
-            for r in dashboard_results:
-                if not is_already_alerted(r['symbol']):
-                    alert_msg = f"🚀 *{r['symbol']}* ({r['change_pct']:+.2f}%)\nPrice: ₹{r['price']}\nPatterns: {r['patterns']}"
-                    if send_telegram_alert(alert_msg):
-                        log_alert(r['symbol'], r['price'], r['change_pct'], r['scan_type'], alert_msg)
+                        if candle and candle in allowed_candles:
+                            note = r.get('pattern_note') or ''
+                            tv_link = os.getenv('TRADINGVIEW_BASE', '').strip()
+                            tv_md = f"\n🔗 [Chart]({tv_link.format(symbol=sym)})" if tv_link else ''
+                            
+                            target_str = f"\n🎯 Target: ₹{r['target']} ({r['target_pct']:+.1f}%)" if r.get('target') else ''
+                            msg = (
+                                f"⭐ *PATTERN ALERT* {sym} {ch:+.2f}% – ₹{r.get('price')}\n"
+                                f"Candle: *{candle}*\n"
+                                f"Setup: {r.get('patterns','')}"
+                                f"{(' \n'+note) if note else ''}"
+                                f"{target_str}"
+                                f"{tv_md}"
+                            )
+                            if send_telegram_alert(msg):
+                                log_alert(sym, r.get('price'), ch, r.get('scan_type','alert'), msg)
             
             return dashboard_results
         except Exception as e:
