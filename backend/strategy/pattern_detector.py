@@ -16,13 +16,14 @@ class PatternDetector:
     def __init__(self):
         self.patterns = []
     
-    def analyze(self, df: pd.DataFrame, symbol: str) -> Dict:
+    def analyze(self, df: pd.DataFrame, symbol: str, nifty_df: pd.DataFrame = None) -> Dict:
         """
         Analyze price data and detect all patterns
         
         Args:
             df: DataFrame with columns: timestamp, open, high, low, close, volume
             symbol: Stock symbol
+            nifty_df: Optional Nifty 50 historical data for RS calculation
             
         Returns:
             Dict with detected patterns and confidence scores
@@ -83,8 +84,33 @@ class PatternDetector:
         if self.is_rocket_base(df):
             patterns_found.append({"type": "ROCKET_BASE", "confidence": 0.85})
 
+        if self.is_high_tight_flag(df):
+            patterns_found.append({
+                "type": "HIGH_TIGHT_FLAG", 
+                "confidence": 0.9,
+                "note": "Explosive 100%+ move followed by ultra-tight consolidation"
+            })
+            
+        if self.is_blue_sky_breakout(df):
+            patterns_found.append({
+                "type": "BLUE_SKY",
+                "confidence": 0.95,
+                "note": "Price at All-Time High (ATH) with no overhead resistance"
+            })
+
         if self.is_volume_surge(df):
             patterns_found.append({"type": "VOLUME_SURGE", "confidence": self.volume_surge_confidence(df)})
+        
+        # Relative Strength (RS) vs Nifty
+        rs_score = 0
+        if nifty_df is not None and not nifty_df.empty:
+            rs_score = self.calculate_rs_score(df, nifty_df)
+            if rs_score > 90:
+                patterns_found.append({
+                    "type": "HIGH_RS", 
+                    "confidence": rs_score/100, 
+                    "note": f"Strong Relative Strength ({rs_score}) vs Nifty 50"
+                })
         
         # Determine primary pattern (highest confidence)
         primary = max(patterns_found, key=lambda x: x['confidence']) if patterns_found else None
@@ -113,7 +139,8 @@ class PatternDetector:
             "confidence": primary['confidence'] if primary else 0,
             "candlestick": candlestick,
             "target": target,
-            "target_pct": target_pct
+            "target_pct": target_pct,
+            "rs_score": rs_score
         }
     
     def is_breakout(self, df: pd.DataFrame) -> bool:
@@ -258,7 +285,10 @@ class PatternDetector:
             "VCP": "#F43F5E",  # Rose
             "IPO_BASE": "#8B5CF6",  # Violet
             "ROCKET_BASE": "#EC4899",  # Pink
-            "VOLUME_SURGE": "#EAB308"  # Yellow
+            "VOLUME_SURGE": "#EAB308", # Yellow
+            "HIGH_RS": "#8B5CF6",     # Violet
+            "HIGH_TIGHT_FLAG": "#D946EF", # Fuchsia
+            "BLUE_SKY": "#0EA5E9"      # Sky Blue
         }
         
         color = colors.get(pattern_type, "#6B7280")
@@ -308,57 +338,74 @@ class PatternDetector:
 
     def is_vcp(self, df: pd.DataFrame) -> bool:
         """
-        Minervini-style VCP (Volatility Contraction Pattern) Detection
+        Refined VCP (Volatility Contraction Pattern) Detection
         Logic:
-        1. Trend Template: Price above 150/200 EMA + 200 EMA trending up
-        2. VCP Contractions: Price range narrowing over recent weeks (T1 -> T2 -> T3)
-        3. Volume Dry-up: Volume at the bottom of the last contraction is significantly low
+        1. Uptrend check (Stage 2)
+        2. Shrinking drops (T1 > T2 > T3)
+        3. Volume dry-up at right side
         """
         if len(df) < 150:
             return False
             
         close = df['close']
         ema_50 = close.ewm(span=50).mean()
-        ema_150 = close.ewm(span=150).mean()
         ema_200 = close.ewm(span=200).mean()
-        current_close = close.iloc[-1]
+        curr_price = close.iloc[-1]
         
-        # 1. Minervini Trend Template (Key parts)
-        # - Current price above 150 & 200 EMA
-        # - 150 EMA above 200 EMA
-        # - 200 EMA trending up for 1 month
-        in_uptrend = (current_close > ema_150.iloc[-1] and 
-                     current_close > ema_200.iloc[-1] and 
-                     ema_150.iloc[-1] > ema_200.iloc[-1] and
-                     ema_200.iloc[-1] > ema_200.iloc[-20])
-        
+        # 1. Base Trend
+        in_uptrend = curr_price > ema_50.iloc[-1] > ema_200.iloc[-1] and ema_200.iloc[-1] > ema_200.iloc[-20]
         if not in_uptrend:
             return False
 
-        # 2. Volatility Contractions (T's)
-        # Measure peak-to-trough drops in recent history
-        # T1: First deep drop (e.g., 20% drop)
-        # T2: Second smaller drop (e.g., 10% drop)
-        # T3: Final tightest contraction (e.g., 4% drop)
+        # 2. Measure Contractions (looking for tightening)
+        # We look at the last 3 swing high-to-low drops
+        recent_60 = df.tail(60)
+        highs = recent_60['high'].values
+        lows = recent_60['low'].values
         
-        window = df.tail(60).copy()
-        rolling_max = window['high'].rolling(window=20).max()
-        rolling_min = window['low'].rolling(window=20).min()
-        drops = (rolling_max - rolling_min) / rolling_max
-
-        # Divide into segments to see if drops are shrinking
-        drop_early = drops.iloc[20:40].max() # T1 or T2
-        drop_recent = drops.iloc[40:].max()  # T3 (Recent)
+        # Simple drop measure over 3 windows
+        drops = []
+        for i in range(3):
+            # Window size decreases as we move right
+            start, end = i*20, (i+1)*20
+            w_high = highs[start:end].max()
+            w_low = lows[start:end].min()
+            drops.append((w_high - w_low) / w_high)
+            
+        # VCP requirement: drops must be decreasing (e.g. 15% -> 8% -> 4%)
+        is_tightening = drops[0] > drops[1] and drops[1] > drops[2]
+        is_ultra_tight = drops[2] < 0.05 # Last contraction < 5%
         
-        is_tightening = drop_early > drop_recent * 1.5
-        is_ultra_tight = drop_recent < 0.08 # Less than 8% base depth recently
-        
-        # 3. Volume Dry-up
+        # 3. Volume dry-up (last 5 days vol < 70% of 50d avg)
         avg_vol = df['volume'].tail(50).mean()
         recent_vol = df['volume'].tail(5).mean()
         vol_dry = recent_vol < avg_vol * 0.7
         
         return in_uptrend and is_tightening and (is_ultra_tight or vol_dry)
+
+    def calculate_rs_score(self, stock_df: pd.DataFrame, nifty_df: pd.DataFrame) -> float:
+        """Calculate Relative Strength Score (0-100) vs Nifty 50"""
+        try:
+            # Align dates
+            common_dates = stock_df.index.intersection(nifty_df.index)
+            if len(common_dates) < 60:
+                return 0
+                
+            s_close = stock_df.loc[common_dates, 'close']
+            n_close = nifty_df.loc[common_dates, 'close']
+            
+            # RS Line = Stock Price / Nifty Price
+            rs_line = s_close / n_close
+            
+            # 3-month RS Rating (Weighted)
+            # Recent performance weighted higher
+            rs_change = rs_line.pct_change(20).tail(60)
+            weights = np.linspace(0.5, 1.0, len(rs_change))
+            score = (rs_change * weights).sum() * 1000
+            
+            return round(min(99, max(1, 50 + score)), 2)
+        except:
+            return 0
 
     def is_rocket_base(self, df: pd.DataFrame) -> bool:
         """
@@ -399,6 +446,50 @@ class PatternDetector:
         curr_vol = df['volume'].iloc[-1]
         ratio = curr_vol / avg_vol
         return min(1.0, ratio / 5.0)
+
+    def is_high_tight_flag(self, df: pd.DataFrame) -> bool:
+        """
+        Detect High Tight Flag (HTF)
+        1. 100%+ move in < 8 weeks (40 trading days)
+        2. Consolidation < 25% deep
+        3. Tightness in last 10 days
+        """
+        if len(df) < 40:
+            return False
+            
+        # 1. 100% Move
+        low_40d = df['low'].tail(40).min()
+        high_40d = df['high'].tail(40).max()
+        move_pct = (high_40d - low_40d) / low_40d
+        
+        if move_pct < 1.0: # 100% minimum
+            return False
+            
+        # 2. Shallow consolidation (not dropped more than 25% from high)
+        curr_price = df['close'].iloc[-1]
+        dist_from_high = (high_40d - curr_price) / high_40d
+        
+        if dist_from_high > 0.25:
+            return False
+            
+        # 3. Tightness (last 10 days range < 12%)
+        recent_10 = df.tail(10)
+        range_10 = (recent_10['high'].max() - recent_10['low'].min()) / recent_10['low'].min()
+        
+        return range_10 < 0.12
+
+    def is_blue_sky_breakout(self, df: pd.DataFrame) -> bool:
+        """
+        Detect Blue Sky Breakout (All-Time High / Multi-year High)
+        """
+        if len(df) < 250:
+            return False
+            
+        curr_price = df['close'].iloc[-1]
+        ath = df['high'].max()
+        
+        # Within 2% of ATH or breaking above
+        return curr_price >= ath * 0.98
 
     # --- Candlestick helpers ---
     def detect_candlestick(self, df: pd.DataFrame) -> str:

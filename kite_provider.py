@@ -53,22 +53,20 @@ class KiteProvider:
             logger.error(f"Kite live quote error for {symbol}: {e}")
             return None
 
-    def get_historical_data(self, symbol, days=365, interval="day"):
+    def get_historical_data(self, symbol, days=365, interval="day", token=None):
         """Fetch historical data using Kite API."""
         try:
-            # Need instrument token for historical data
-            # For simplicity, we assume we can resolve it or use the symbol if supported
-            # In a real app, we'd load an instruments list and map SYMBOL -> instrument_token
-            # Let's try to find the token first
-            instruments = self.kite.instruments("NSE")
-            df_inst = pd.DataFrame(instruments)
-            token_row = df_inst[df_inst['tradingsymbol'] == symbol]
-            
-            if token_row.empty:
-                logger.error(f"Instrument token not found for {symbol}")
-                return pd.DataFrame()
+            if not token:
+                # Need instrument token for historical data
+                instruments = self.kite.instruments("NSE")
+                df_inst = pd.DataFrame(instruments)
+                token_row = df_inst[df_inst['tradingsymbol'] == symbol]
                 
-            token = int(token_row.iloc[0]['instrument_token'])
+                if token_row.empty:
+                    logger.error(f"Instrument token not found for {symbol}")
+                    return pd.DataFrame()
+                    
+                token = int(token_row.iloc[0]['instrument_token'])
             
             to_date = datetime.now()
             from_date = to_date - timedelta(days=days)
@@ -83,7 +81,7 @@ class KiteProvider:
                 return df
             return pd.DataFrame()
         except Exception as e:
-            logger.error(f"Kite historical data error for {symbol}: {e}")
+            logger.error(f"Kite historical data error for {symbol} (token {token}): {e}")
             return pd.DataFrame()
 
 # Keep existing bhavcopy functions for backup/EOD reports

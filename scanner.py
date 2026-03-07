@@ -32,7 +32,7 @@ class MarketScanner:
         self.min_change = float(os.getenv("MIN_CHANGE", 0))
         self.max_change = float(os.getenv("MAX_CHANGE", 20))
         # which pattern types to keep (comma separated)
-        self.scan_patterns = [p.strip().upper() for p in os.getenv("SCAN_PATTERNS", "CONSOLIDATION,VCP,ORDER_BLOCK,BREAKOUT").split(",") if p.strip()]
+        self.scan_patterns = [p.strip().upper() for p in os.getenv("SCAN_PATTERNS", "CONSOLIDATION,VCP,ORDER_BLOCK,BREAKOUT,HIGH_RS").split(",") if p.strip()]
         
         # Institutional Engines
         self.smc_engine = SMCEngine()
@@ -74,13 +74,22 @@ class MarketScanner:
         logger.info(f"Starting lightning scan for {len(self.symbols_equity)} stocks...")
         results = []
         
+        # Pre-fetch Nifty 50 data for RS comparison
+        nifty_df = self.data_provider.get_historical_data("NIFTY 50", period="1y")
+
         def process_symbol(symbol):
             try:
                 df = self.data_provider.get_historical_data(symbol, period="1y")
-                pdinfo = self.pattern_detector.analyze(df, symbol)
+                pdinfo = self.pattern_detector.analyze(df, symbol, nifty_df=nifty_df)
 
                 primary = pdinfo.get('primary_pattern')
-                if not primary or primary.upper() not in self.scan_patterns:
+                if not primary: # Still keep stocks if they have high RS even if no pattern
+                    if pdinfo.get('rs_score', 0) > 95:
+                        primary = "HIGH_RS"
+                    else:
+                        return []
+                
+                if primary.upper() not in self.scan_patterns and primary != "HIGH_RS":
                     return []
 
                 live = self.data_provider.fetch_nse_quote(symbol)
@@ -192,40 +201,57 @@ class MarketScanner:
             logger.info(f"Scan complete. Total raw: {len(results)}, Valid stocks: {len(dashboard_results)}")
             save_dashboard_cache(dashboard_results)
 
-            # --- REFINED TELEGRAM ALERTS (User Condition: -1% to +3% + Candlestick) ---
+            # --- REFINED TELEGRAM ALERTS (Professional Conditions) ---
+            elite_patterns = ["VCP", "HIGH_TIGHT_FLAG", "BLUE_SKY", "HIGH_RS"]
             allowed_candles = ["Doji", "Hammer", "Bullish Engulfing", "Bullish Harami", "Inside Bar"]
             
             for r in results:
+                sym = r['symbol']
+                if is_already_alerted(sym):
+                    continue
+                    
                 ch = r.get('change_pct', 0)
-                if -1.0 <= ch <= 3.0:
-                    sym = r['symbol']
-                    if not is_already_alerted(sym):
-                        df_hist = self.data_provider.get_historical_data(sym, period="5d")
-                        pdinfo = self.pattern_detector.analyze(df_hist, sym)
-                        candle = pdinfo.get('candlestick')
-                        
-                        if candle and candle in allowed_candles:
-                            note = r.get('pattern_note') or ''
-                            tv_link = os.getenv('TRADINGVIEW_BASE', '').strip()
-                            tv_md = ''
-                            if tv_link:
-                                try:
-                                    tv_md = f"\n🔗 [Chart]({tv_link.format(symbol=sym)})"
-                                except:
-                                    tv_md = f"\n🔗 [Chart]({tv_link})"
-                            
-                            target_str = f"\n🎯 Target: ₹{r['target']} ({r['target_pct']:+.1f}%)" if r.get('target') else ''
-                            note_ext = f" \n{note}" if note else ""
-                            msg = (
-                                f"⭐ *PATTERN ALERT* {sym} {ch:+.2f}% – ₹{r.get('price')}\n"
-                                f"Candle: *{candle}*\n"
-                                f"Setup: {r.get('patterns','')}"
-                                f"{note_ext}"
-                                f"{target_str}"
-                                f"{tv_md}"
-                            )
-                            if send_telegram_alert(msg):
-                                log_alert(sym, r.get('price'), ch, r.get('scan_type', 'alert'), msg)
+                setup = r.get('patterns', '')
+                is_elite = any(p in setup for p in elite_patterns)
+                
+                # Condition 1: Elite Pattern (VCP, HTF, RS > 95)
+                # Condition 2: Price Action (-1% to +3%) + Candlestick
+                trigger_alert = False
+                alert_reason = ""
+                
+                # We already have pdinfo from the scan phase, but let's re-verify for the message
+                df_hist = self.data_provider.get_historical_data(sym, period="1y")
+                pdinfo = self.pattern_detector.analyze(df_hist, sym, nifty_df=nifty_df)
+                candle = pdinfo.get('candlestick')
+                
+                if is_elite:
+                    trigger_alert = True
+                    alert_reason = "ELITE SETUP"
+                elif -1.0 <= ch <= 3.0 and candle in allowed_candles:
+                    trigger_alert = True
+                    alert_reason = "PATTERN ALERT"
+                
+                if trigger_alert:
+                    note = r.get('pattern_note') or ''
+                    tv_link = os.getenv('TRADINGVIEW_BASE', '').strip()
+                    tv_md = f"\n🔗 [Chart]({tv_link.format(symbol=sym)})" if tv_link else ""
+                    
+                    target_str = f"\n🎯 Target: ₹{r['target']} ({r['target_pct']:+.1f}%)" if r.get('target') else ''
+                    rs_val = pdinfo.get('rs_score', 0)
+                    rs_str = f"\n📊 RS Rating: {rs_val}" if rs_val > 0 else ""
+                    
+                    msg = (
+                        f"🚀 *{alert_reason}* {sym}\n"
+                        f"Price: ₹{r.get('price')} ({ch:+.2f}%)\n"
+                        f"Setup: *{setup}*\n"
+                        f"Candle: {candle or 'Normal'}"
+                        f"{rs_str}"
+                        f"{target_str}\n"
+                        f"{note}"
+                        f"{tv_md}"
+                    )
+                    if send_telegram_alert(msg):
+                        log_alert(sym, r.get('price'), ch, r.get('scan_type', 'alert'), msg)
             
             return dashboard_results
         except Exception as e:

@@ -99,11 +99,17 @@ class DataProvider:
                 try:
                     kp = KiteProvider(api_key)
                     kp.set_access_token(access_token)
-                    df_kite = kp.get_historical_data(symbol, days=365)
+                    
+                    # Special Case for NIFTY 50 index token
+                    token = None
+                    if symbol == "NIFTY 50":
+                        token = 256265
+                    
+                    df_kite = kp.get_historical_data(symbol, days=365, token=token)
                     if not df_kite.empty:
                         return df_kite
                 except Exception as e:
-                    logger.debug(f"Kite historical fail: {e}")
+                    logger.debug(f"Kite historical fail for {symbol}: {e}")
 
             # 3. Robust Manual NSE Fetch (Fallback)
             import requests
