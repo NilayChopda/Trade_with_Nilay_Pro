@@ -52,13 +52,13 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PYTHONPATH: .
         run: |
-          python -m backend.scanner.scanner_engine
+          python scanner.py
 
       - name: Upload Scanner Results (Artifact)
         uses: actions/upload-artifact@v4
         with:
           name: scanner-db-${{ github.run_number }}
-          path: backend/database/trade_with_nilay.db
+          path: trade_with_nilay_prod.db
           retention-days: 7
 
       - name: Commit Updated Database

@@ -17,12 +17,6 @@ jobs:
       - name: Notify about the push
         run: echo "Pushed at $(date) to main, triggering Render."
 
-      - name: Trigger Render deployment via API
-        if: ${{ secrets.RENDER_API_KEY != '' }}
+      - name: Trigger Render deployment via Deploy Hook
         run: |
-          curl -X POST \
-            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
-            https://api.render.com/deploy/srv-<YOUR_SERVICE_ID>
-        env:
-          # RENDER_API_KEY should be stored in the GitHub repo's Secrets.
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          curl -X POST "https://api.render.com/deploy/srv-d6cubd7fte5s73d1og9g?key=pAYFTu_4MGob"
